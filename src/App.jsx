@@ -25,6 +25,7 @@ function App() {
 
   const handleFileSelect = useCallback(
     async (file) => {
+      console.log(`[App] File selected: ${file.name} (${file.type}, ${(file.size / 1024).toFixed(1)} KB)`);
       tts.stop();
       setTexts({});
       setCurrentPage(0);
@@ -33,29 +34,43 @@ function App() {
 
       let imageList;
       if (file.type === 'application/pdf') {
+        console.log('[PDF] Converting PDF pages to images...');
         setConverting(true);
+        const startConvert = performance.now();
         imageList = await pdfToImages(file);
+        const convertTime = ((performance.now() - startConvert) / 1000).toFixed(2);
         setConverting(false);
+        console.log(`[PDF] Converted ${imageList.length} pages in ${convertTime}s`);
       } else {
+        console.log('[Image] Reading image file...');
         const base64 = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result.split(',')[1]);
           reader.readAsDataURL(file);
         });
         imageList = [base64];
+        console.log(`[Image] Image loaded (${(base64.length / 1024).toFixed(1)} KB base64)`);
       }
 
       setPages(imageList);
       setOcrProgress({ current: 0, total: imageList.length });
+      console.log(`[OCR] Starting extraction for ${imageList.length} page(s)...`);
 
       const newTexts = {};
+      const startOcr = performance.now();
       for (let i = 0; i < imageList.length; i++) {
+        console.log(`[OCR] Extracting page ${i + 1}/${imageList.length}...`);
         setOcrProgress({ current: i + 1, total: imageList.length });
+        const pageStart = performance.now();
         const text = await extractText(imageList[i]);
+        const pageTime = ((performance.now() - pageStart) / 1000).toFixed(2);
         newTexts[i] = text;
         setTexts({ ...newTexts });
+        console.log(`[OCR] Page ${i + 1} done in ${pageTime}s (${text.length} chars)`);
       }
 
+      const totalTime = ((performance.now() - startOcr) / 1000).toFixed(2);
+      console.log(`[OCR] All ${imageList.length} pages extracted in ${totalTime}s`);
       setOcrProgress({ current: imageList.length, total: imageList.length });
     },
     [extractText, tts]
