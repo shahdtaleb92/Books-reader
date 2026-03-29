@@ -12,6 +12,7 @@ export default function TTSControls({
   onStop,
   noArabicVoice,
   disabled,
+  progress,
 }) {
   return (
     <div className="tts-controls">
@@ -78,6 +79,18 @@ export default function TTSControls({
           </button>
         )}
       </div>
+
+      {speaking && progress.total > 0 && (
+        <div className="tts-progress">
+          <div
+            className="tts-progress-bar"
+            style={{ width: `${(progress.current / progress.total) * 100}%` }}
+          />
+          <span className="tts-progress-text">
+            {progress.current} / {progress.total}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -120,6 +120,7 @@ function App() {
                 onStop={tts.stop}
                 noArabicVoice={tts.noArabicVoice}
                 disabled={!currentText}
+                progress={tts.progress}
               />
             )}
           </>
