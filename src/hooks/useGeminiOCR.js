@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 
 const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
 
 const PROMPT =
   'استخرج كل النص العربي الموجود في هذه الصورة بدقة. أعد النص فقط محافظاً على ترتيب الفقرات وتسلسل الأسطر. لا تضف أي تعليقات أو ملاحظات.';
