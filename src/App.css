@@ -1,0 +1,247 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f0f2f5;
+  color: #1a1a2e;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+header h1 {
+  font-size: 2rem;
+  color: #16213e;
+  margin-bottom: 0.5rem;
+}
+
+header p {
+  color: #666;
+  font-size: 0.95rem;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* API Key */
+.api-key-section label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.api-key-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.api-key-row input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* Buttons */
+button {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  background: #0f3460;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: background 0.2s;
+}
+
+button:hover:not(:disabled) {
+  background: #16213e;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* File Uploader */
+.file-uploader {
+  text-align: center;
+}
+
+.file-uploader input[type='file'] {
+  display: none;
+}
+
+.upload-label {
+  display: inline-block;
+  padding: 1rem 2rem;
+  background: #e8f0fe;
+  border: 2px dashed #0f3460;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: background 0.2s;
+}
+
+.upload-label:hover {
+  background: #d0e1fd;
+}
+
+.file-name {
+  text-align: center;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+/* Page Navigator */
+.page-navigator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.page-navigator span {
+  font-weight: 600;
+  min-width: 120px;
+  text-align: center;
+}
+
+/* Text Editor */
+.text-editor label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.text-editor textarea {
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-family: 'Traditional Arabic', 'Arabic Typesetting', 'Amiri', serif;
+  line-height: 2;
+  resize: vertical;
+  background: #fff;
+}
+
+.text-editor textarea:focus {
+  outline: none;
+  border-color: #0f3460;
+  box-shadow: 0 0 0 2px rgba(15, 52, 96, 0.15);
+}
+
+.loading {
+  text-align: center;
+  padding: 2rem;
+  color: #0f3460;
+  font-size: 1.1rem;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* TTS Controls */
+.tts-controls {
+  background: #fff;
+  padding: 1.5rem;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+}
+
+.tts-controls h3 {
+  margin-bottom: 1rem;
+  color: #16213e;
+}
+
+.tts-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.voice-select,
+.speed-control {
+  flex: 1;
+  min-width: 200px;
+}
+
+.voice-select label,
+.speed-control label {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+  color: #555;
+}
+
+.voice-select select,
+.speed-control input[type='range'] {
+  width: 100%;
+}
+
+.voice-select select {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.speed-control input[type='range'] {
+  margin-top: 0.3rem;
+}
+
+.tts-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tts-buttons .stop-btn {
+  background: #c0392b;
+}
+
+.tts-buttons .stop-btn:hover {
+  background: #96281b;
+}
+
+/* Alerts */
+.warning {
+  background: #fff3cd;
+  color: #856404;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  border: 1px solid #ffc107;
+}
+
+.error {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #f5c6cb;
+}
