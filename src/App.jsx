@@ -17,6 +17,8 @@ function App() {
   const [texts, setTexts] = useState({});
   const [currentPage, setCurrentPage] = useState(0);
   const [fileName, setFileName] = useState('');
+  const [ocrProgress, setOcrProgress] = useState({ current: 0, total: 0 });
+  const [converting, setConverting] = useState(false);
 
   const { extractText, loading, error } = useGeminiOCR(apiKey);
   const tts = useTTS();
@@ -27,10 +29,13 @@ function App() {
       setTexts({});
       setCurrentPage(0);
       setFileName(file.name);
+      setOcrProgress({ current: 0, total: 0 });
 
       let imageList;
       if (file.type === 'application/pdf') {
+        setConverting(true);
         imageList = await pdfToImages(file);
+        setConverting(false);
       } else {
         const base64 = await new Promise((resolve) => {
           const reader = new FileReader();
@@ -41,11 +46,17 @@ function App() {
       }
 
       setPages(imageList);
+      setOcrProgress({ current: 0, total: imageList.length });
 
-      if (imageList.length > 0) {
-        const text = await extractText(imageList[0]);
-        setTexts({ 0: text });
+      const newTexts = {};
+      for (let i = 0; i < imageList.length; i++) {
+        setOcrProgress({ current: i + 1, total: imageList.length });
+        const text = await extractText(imageList[i]);
+        newTexts[i] = text;
+        setTexts({ ...newTexts });
       }
+
+      setOcrProgress({ current: imageList.length, total: imageList.length });
     },
     [extractText, tts]
   );
@@ -91,6 +102,26 @@ function App() {
             )}
 
             {error && <div className="error">خطأ: {error}</div>}
+
+            {converting && (
+              <div className="ocr-progress">
+                <span>جاري تحويل صفحات PDF إلى صور...</span>
+              </div>
+            )}
+
+            {!converting && ocrProgress.total > 0 && ocrProgress.current <= ocrProgress.total && loading && (
+              <div className="ocr-progress">
+                <span>
+                  جاري استخراج النص: صفحة {ocrProgress.current} من {ocrProgress.total}
+                </span>
+                <div className="ocr-progress-bar-container">
+                  <div
+                    className="ocr-progress-bar"
+                    style={{ width: `${(ocrProgress.current / ocrProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             <PageNavigator
               currentPage={currentPage}
