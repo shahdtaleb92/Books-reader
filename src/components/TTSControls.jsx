@@ -38,12 +38,9 @@ export default function TTSControls({
           >
             {arabicVoices.map((v) => (
               <option key={v.name} value={v.name}>
-                {v.name} ({v.lang})
+                {v.label}
               </option>
             ))}
-            {arabicVoices.length === 0 && (
-              <option value="">لا توجد أصوات عربية</option>
-            )}
           </select>
         </div>
 

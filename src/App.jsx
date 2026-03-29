@@ -21,7 +21,7 @@ function App() {
   const [converting, setConverting] = useState(false);
 
   const { extractText, loading, error } = useGeminiOCR(apiKey);
-  const tts = useTTS();
+  const tts = useTTS(apiKey);
 
   const handleFileSelect = useCallback(
     async (file) => {
@@ -116,7 +116,8 @@ function App() {
               <div className="file-name">الملف: {fileName}</div>
             )}
 
-            {error && <div className="error">خطأ: {error}</div>}
+            {error && <div className="error">خطأ OCR: {error}</div>}
+            {tts.error && <div className="error">خطأ صوتي: {tts.error}</div>}
 
             {converting && (
               <div className="ocr-progress">
