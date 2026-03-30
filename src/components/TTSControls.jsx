@@ -2,28 +2,23 @@ export default function TTSControls({
   arabicVoices,
   selectedVoice,
   onVoiceChange,
-  rate,
-  onRateChange,
   speaking,
   paused,
   onPlay,
   onPause,
   onResume,
   onStop,
-  noArabicVoice,
+  onGenerate,
+  onDownload,
+  generating,
+  audioReady,
   disabled,
   progress,
+  fileName,
 }) {
   return (
     <div className="tts-controls">
-      <h3>التحكم بالقراءة الصوتية</h3>
-
-      {noArabicVoice && (
-        <div className="warning">
-          لم يتم العثور على صوت عربي في المتصفح. قد لا تعمل القراءة الصوتية
-          بشكل صحيح.
-        </div>
-      )}
+      <h3>القراءة الصوتية (Gemini TTS)</h3>
 
       <div className="tts-row">
         <div className="voice-select">
@@ -35,6 +30,7 @@ export default function TTSControls({
               const voice = arabicVoices.find((v) => v.name === e.target.value);
               if (voice) onVoiceChange(voice);
             }}
+            disabled={generating}
           >
             {arabicVoices.map((v) => (
               <option key={v.name} value={v.name}>
@@ -43,41 +39,46 @@ export default function TTSControls({
             ))}
           </select>
         </div>
-
-        <div className="speed-control">
-          <label htmlFor="speed">
-            السرعة: {rate.toFixed(1)}x
-          </label>
-          <input
-            id="speed"
-            type="range"
-            min="0.5"
-            max="2"
-            step="0.1"
-            value={rate}
-            onChange={(e) => onRateChange(parseFloat(e.target.value))}
-          />
-        </div>
       </div>
 
       <div className="tts-buttons">
-        {!speaking && (
-          <button onClick={onPlay} disabled={disabled}>
-            تشغيل
+        {!audioReady && !generating && (
+          <button onClick={onGenerate} disabled={disabled}>
+            توليد الملف الصوتي لجميع الصفحات
           </button>
         )}
-        {speaking && !paused && (
-          <button onClick={onPause}>إيقاف مؤقت</button>
-        )}
-        {speaking && paused && <button onClick={onResume}>استئناف</button>}
-        {speaking && (
-          <button onClick={onStop} className="stop-btn">
-            إيقاف
+
+        {generating && (
+          <button disabled className="generating-btn">
+            جاري التوليد...
           </button>
+        )}
+
+        {audioReady && !generating && (
+          <>
+            {!speaking && (
+              <button onClick={onPlay}>تشغيل</button>
+            )}
+            {speaking && !paused && (
+              <button onClick={onPause}>إيقاف مؤقت</button>
+            )}
+            {speaking && paused && (
+              <button onClick={onResume}>استئناف</button>
+            )}
+            {speaking && (
+              <button onClick={onStop} className="stop-btn">إيقاف</button>
+            )}
+            <button onClick={() => onDownload(fileName)} className="download-btn">
+              تحميل الملف الصوتي
+            </button>
+            <button onClick={onGenerate} disabled={disabled}>
+              إعادة التوليد
+            </button>
+          </>
         )}
       </div>
 
-      {speaking && progress.total > 0 && (
+      {generating && progress.total > 0 && (
         <div className="tts-progress">
           <div
             className="tts-progress-bar"

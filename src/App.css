@@ -169,6 +169,21 @@ button:disabled {
   50% { opacity: 0.5; }
 }
 
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.save-btn {
+  background: #27ae60;
+}
+
+.save-btn:hover {
+  background: #1e8449;
+}
+
 /* TTS Controls */
 .tts-controls {
   background: #fff;
@@ -291,6 +306,18 @@ button:disabled {
   font-size: 0.8rem;
   color: #333;
   font-weight: 600;
+}
+
+.download-btn {
+  background: #27ae60;
+}
+
+.download-btn:hover {
+  background: #1e8449;
+}
+
+.generating-btn {
+  animation: pulse 1.5s infinite;
 }
 
 /* Alerts */

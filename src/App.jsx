@@ -99,7 +99,29 @@ function App() {
     [currentPage]
   );
 
+  const handleSaveText = useCallback(() => {
+    const fullText = Object.keys(texts)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => texts[key])
+      .filter(Boolean)
+      .join('\n\n--- صفحة ---\n\n');
+
+    if (!fullText) return;
+
+    const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const baseName = fileName ? fileName.replace(/\.[^.]+$/, '') : 'extracted';
+    a.download = `${baseName}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    console.log(`[App] Text saved as ${baseName}.txt`);
+  }, [texts, fileName]);
+
+  const hasTexts = Object.values(texts).some(Boolean);
   const currentText = texts[currentPage] || '';
+  const audioFileName = fileName ? fileName.replace(/\.[^.]+$/, '') + '.wav' : 'audio.wav';
 
   return (
     <div className="app" dir="rtl" lang="ar">
@@ -160,22 +182,32 @@ function App() {
               loading={loading}
             />
 
-            {currentText && (
+            {hasTexts && (
+              <div className="action-buttons">
+                <button onClick={handleSaveText} className="save-btn">
+                  حفظ النص كملف TXT
+                </button>
+              </div>
+            )}
+
+            {hasTexts && ttsApiKey && (
               <TTSControls
                 arabicVoices={tts.arabicVoices}
                 selectedVoice={tts.selectedVoice}
                 onVoiceChange={tts.setSelectedVoice}
-                rate={tts.rate}
-                onRateChange={tts.setRate}
                 speaking={tts.speaking}
                 paused={tts.paused}
-                onPlay={() => tts.speak(currentText)}
+                onPlay={tts.play}
                 onPause={tts.pause}
                 onResume={tts.resume}
                 onStop={tts.stop}
-                noArabicVoice={tts.noArabicVoice}
-                disabled={!currentText}
+                onGenerate={() => tts.generateFullAudio(texts)}
+                onDownload={tts.downloadAudio}
+                generating={tts.generating}
+                audioReady={!!tts.audioUrl}
+                disabled={!hasTexts}
                 progress={tts.progress}
+                fileName={audioFileName}
               />
             )}
           </>

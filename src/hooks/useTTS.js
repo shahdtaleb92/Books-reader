@@ -1,19 +1,23 @@
 import { useState, useRef, useCallback } from 'react';
 
-const TTS_URL = 'https://texttospeech.googleapis.com/v1/text:synthesize';
-const MAX_CHUNK_LENGTH = 4000;
+const TTS_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent';
+
+const MAX_CHUNK_BYTES = 3500;
 
 const ARABIC_VOICES = [
-  { name: 'ar-XA-Wavenet-A', label: 'Wavenet A (أنثى)', gender: 'FEMALE' },
-  { name: 'ar-XA-Wavenet-B', label: 'Wavenet B (ذكر)', gender: 'MALE' },
-  { name: 'ar-XA-Wavenet-C', label: 'Wavenet C (ذكر)', gender: 'MALE' },
-  { name: 'ar-XA-Wavenet-D', label: 'Wavenet D (أنثى)', gender: 'FEMALE' },
-  { name: 'ar-XA-Neural2-A', label: 'Neural2 A (أنثى)', gender: 'FEMALE' },
-  { name: 'ar-XA-Neural2-C', label: 'Neural2 C (ذكر)', gender: 'MALE' },
-  { name: 'ar-XA-Standard-A', label: 'Standard A (أنثى)', gender: 'FEMALE' },
-  { name: 'ar-XA-Standard-B', label: 'Standard B (ذكر)', gender: 'MALE' },
-  { name: 'ar-XA-Standard-C', label: 'Standard C (ذكر)', gender: 'MALE' },
-  { name: 'ar-XA-Standard-D', label: 'Standard D (أنثى)', gender: 'FEMALE' },
+  { name: 'Aoede', label: 'Aoede' },
+  { name: 'Charon', label: 'Charon' },
+  { name: 'Fenrir', label: 'Fenrir' },
+  { name: 'Kore', label: 'Kore' },
+  { name: 'Leda', label: 'Leda' },
+  { name: 'Orus', label: 'Orus' },
+  { name: 'Puck', label: 'Puck' },
+  { name: 'Zephyr', label: 'Zephyr' },
+  { name: 'Achernar', label: 'Achernar' },
+  { name: 'Gacrux', label: 'Gacrux' },
+  { name: 'Sulafat', label: 'Sulafat' },
+  { name: 'Vindemiatrix', label: 'Vindemiatrix' },
 ];
 
 function splitTextIntoChunks(text) {
@@ -22,7 +26,8 @@ function splitTextIntoChunks(text) {
   let current = '';
 
   for (const sentence of sentences) {
-    if (sentence.length > MAX_CHUNK_LENGTH) {
+    const sentenceBytes = new TextEncoder().encode(sentence).length;
+    if (sentenceBytes > MAX_CHUNK_BYTES) {
       if (current) {
         chunks.push(current);
         current = '';
@@ -30,19 +35,23 @@ function splitTextIntoChunks(text) {
       const words = sentence.split(/\s+/);
       let wordChunk = '';
       for (const word of words) {
-        if ((wordChunk + ' ' + word).trim().length > MAX_CHUNK_LENGTH) {
+        const combined = (wordChunk + ' ' + word).trim();
+        if (new TextEncoder().encode(combined).length > MAX_CHUNK_BYTES) {
           if (wordChunk) chunks.push(wordChunk);
           wordChunk = word;
         } else {
-          wordChunk = (wordChunk + ' ' + word).trim();
+          wordChunk = combined;
         }
       }
       if (wordChunk) chunks.push(wordChunk);
-    } else if ((current + ' ' + sentence).trim().length > MAX_CHUNK_LENGTH) {
-      if (current) chunks.push(current);
-      current = sentence;
     } else {
-      current = (current + ' ' + sentence).trim();
+      const combined = (current + ' ' + sentence).trim();
+      if (new TextEncoder().encode(combined).length > MAX_CHUNK_BYTES) {
+        if (current) chunks.push(current);
+        current = sentence;
+      } else {
+        current = combined;
+      }
     }
   }
   if (current) chunks.push(current);
@@ -50,16 +59,52 @@ function splitTextIntoChunks(text) {
   return chunks;
 }
 
+function pcmToWav(pcmData, sampleRate, numChannels, bitsPerSample) {
+  const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const header = new ArrayBuffer(44);
+  const view = new DataView(header);
+
+  const writeString = (offset, str) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + pcmData.byteLength, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, 'data');
+  view.setUint32(40, pcmData.byteLength, true);
+
+  const wav = new Uint8Array(44 + pcmData.byteLength);
+  wav.set(new Uint8Array(header), 0);
+  wav.set(new Uint8Array(pcmData), 44);
+  return wav;
+}
+
+function base64ToArrayBuffer(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
 export function useTTS(apiKey) {
   const [selectedVoice, setSelectedVoice] = useState(ARABIC_VOICES[0]);
-  const [rate, setRate] = useState(1);
   const [speaking, setSpeaking] = useState(false);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [generating, setGenerating] = useState(false);
+  const [audioUrl, setAudioUrl] = useState(null);
   const [error, setError] = useState(null);
   const audioRef = useRef(null);
-  const chunksRef = useRef([]);
-  const currentIndexRef = useRef(0);
   const stoppedRef = useRef(false);
 
   const synthesizeChunk = useCallback(
@@ -68,14 +113,17 @@ export function useTTS(apiKey) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          input: { text },
-          voice: {
-            languageCode: 'ar-XA',
-            name: selectedVoice.name,
-          },
-          audioConfig: {
-            audioEncoding: 'MP3',
-            speakingRate: rate,
+          contents: [{ parts: [{ text }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              languageCode: 'ar-XA',
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: selectedVoice.name,
+                },
+              },
+            },
           },
         }),
       });
@@ -86,77 +134,90 @@ export function useTTS(apiKey) {
       }
 
       const data = await res.json();
-      return data.audioContent;
+      const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (!audioData) throw new Error('No audio data in response');
+      return audioData;
     },
-    [apiKey, selectedVoice, rate]
+    [apiKey, selectedVoice]
   );
 
-  const playChunk = useCallback(
-    async (index) => {
-      if (stoppedRef.current || index >= chunksRef.current.length) {
-        setSpeaking(false);
-        setPaused(false);
-        if (!stoppedRef.current) {
-          setProgress((p) => ({ ...p, current: p.total }));
-        }
-        return;
-      }
+  const generateFullAudio = useCallback(
+    async (allTexts) => {
+      const fullText = Object.keys(allTexts)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((key) => allTexts[key])
+        .filter(Boolean)
+        .join('\n\n');
 
-      try {
-        console.log(`[TTS] Synthesizing chunk ${index + 1}/${chunksRef.current.length}...`);
-        const audioContent = await synthesizeChunk(chunksRef.current[index]);
-        if (stoppedRef.current) return;
+      if (!fullText) return;
 
-        const audio = new Audio(`data:audio/mp3;base64,${audioContent}`);
-        audioRef.current = audio;
-
-        audio.onended = () => {
-          currentIndexRef.current = index + 1;
-          setProgress((p) => ({ ...p, current: index + 1 }));
-          playChunk(index + 1);
-        };
-
-        audio.onerror = () => {
-          console.error('[TTS] Audio playback error');
-          setSpeaking(false);
-          setPaused(false);
-        };
-
-        setProgress((p) => ({ ...p, current: index + 1 }));
-        audio.play();
-      } catch (e) {
-        console.error(`[TTS] Error:`, e.message);
-        setError(e.message);
-        setSpeaking(false);
-        setPaused(false);
-      }
-    },
-    [synthesizeChunk]
-  );
-
-  const speak = useCallback(
-    (text) => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      if (!text) return;
-
+      setGenerating(true);
       setError(null);
-      const chunks = splitTextIntoChunks(text);
-      chunksRef.current = chunks;
-      currentIndexRef.current = 0;
       stoppedRef.current = false;
 
-      setSpeaking(true);
-      setPaused(false);
+      const chunks = splitTextIntoChunks(fullText);
       setProgress({ current: 0, total: chunks.length });
-      console.log(`[TTS] Starting playback: ${chunks.length} chunk(s), voice: ${selectedVoice.name}`);
+      console.log(`[TTS] Generating audio: ${chunks.length} chunk(s), voice: ${selectedVoice.name}`);
 
-      playChunk(0);
+      const allPcmBuffers = [];
+      const startTime = performance.now();
+
+      try {
+        for (let i = 0; i < chunks.length; i++) {
+          if (stoppedRef.current) {
+            setGenerating(false);
+            return;
+          }
+          console.log(`[TTS] Synthesizing chunk ${i + 1}/${chunks.length} (${new TextEncoder().encode(chunks[i]).length} bytes)...`);
+          setProgress({ current: i + 1, total: chunks.length });
+          const audioBase64 = await synthesizeChunk(chunks[i]);
+          const pcmBuffer = base64ToArrayBuffer(audioBase64);
+          allPcmBuffers.push(pcmBuffer);
+          console.log(`[TTS] Chunk ${i + 1} done (${(pcmBuffer.byteLength / 1024).toFixed(1)} KB PCM)`);
+        }
+
+        const totalLength = allPcmBuffers.reduce((sum, buf) => sum + buf.byteLength, 0);
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const buf of allPcmBuffers) {
+          combined.set(new Uint8Array(buf), offset);
+          offset += buf.byteLength;
+        }
+
+        const wav = pcmToWav(combined.buffer, 24000, 1, 16);
+        const blob = new Blob([wav], { type: 'audio/wav' });
+
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        const url = URL.createObjectURL(blob);
+        setAudioUrl(url);
+
+        const totalTime = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.log(`[TTS] Full audio generated in ${totalTime}s (${(wav.byteLength / (1024 * 1024)).toFixed(2)} MB WAV)`);
+      } catch (e) {
+        console.error('[TTS] Error:', e.message);
+        setError(e.message);
+      } finally {
+        setGenerating(false);
+      }
     },
-    [playChunk, selectedVoice]
+    [synthesizeChunk, selectedVoice, audioUrl]
   );
+
+  const play = useCallback(() => {
+    if (!audioUrl) return;
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    const audio = new Audio(audioUrl);
+    audioRef.current = audio;
+    audio.onended = () => {
+      setSpeaking(false);
+      setPaused(false);
+    };
+    audio.play();
+    setSpeaking(true);
+    setPaused(false);
+  }, [audioUrl]);
 
   const pause = useCallback(() => {
     if (audioRef.current) {
@@ -176,29 +237,38 @@ export function useTTS(apiKey) {
     stoppedRef.current = true;
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current = null;
+      audioRef.current.currentTime = 0;
     }
-    chunksRef.current = [];
-    currentIndexRef.current = 0;
     setSpeaking(false);
     setPaused(false);
-    setProgress({ current: 0, total: 0 });
   }, []);
+
+  const downloadAudio = useCallback(
+    (filename) => {
+      if (!audioUrl) return;
+      const a = document.createElement('a');
+      a.href = audioUrl;
+      a.download = filename || 'audio.wav';
+      a.click();
+    },
+    [audioUrl]
+  );
 
   return {
     arabicVoices: ARABIC_VOICES,
     selectedVoice,
     setSelectedVoice,
-    rate,
-    setRate,
     speaking,
     paused,
     progress,
-    speak,
+    generating,
+    audioUrl,
+    generateFullAudio,
+    play,
     pause,
     resume,
     stop,
+    downloadAudio,
     error,
-    noArabicVoice: false,
   };
 }
