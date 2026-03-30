@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 
 const TTS_URL = 'https://texttospeech.googleapis.com/v1/text:synthesize';
-const TTS_API_KEY = 'AIzaSyA3HTqB53ypTzIkfQvOQTucv2mNKj4tnXI
 const MAX_CHUNK_LENGTH = 4000;
 
 const ARABIC_VOICES = [
@@ -65,7 +64,7 @@ export function useTTS(apiKey) {
 
   const synthesizeChunk = useCallback(
     async (text) => {
-      const res = await fetch(`${TTS_URL}?key=${TTS_API_KEY}`, {
+      const res = await fetch(`${TTS_URL}?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
