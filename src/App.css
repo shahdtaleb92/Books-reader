@@ -59,6 +59,12 @@ main {
   font-size: 0.9rem;
 }
 
+.api-key-hint {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 0.5rem;
+}
+
 /* Buttons */
 button {
   padding: 0.6rem 1.2rem;

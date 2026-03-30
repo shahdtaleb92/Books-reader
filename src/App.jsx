@@ -13,6 +13,9 @@ function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem('gemini_api_key') || ''
   );
+  const [ttsApiKey, setTtsApiKey] = useState(
+    () => localStorage.getItem('tts_api_key') || ''
+  );
   const [pages, setPages] = useState([]);
   const [texts, setTexts] = useState({});
   const [currentPage, setCurrentPage] = useState(0);
@@ -21,7 +24,7 @@ function App() {
   const [converting, setConverting] = useState(false);
 
   const { extractText, loading, error } = useGeminiOCR(apiKey);
-  const tts = useTTS(apiKey);
+  const tts = useTTS(ttsApiKey);
 
   const handleFileSelect = useCallback(
     async (file) => {
@@ -106,9 +109,14 @@ function App() {
       </header>
 
       <main>
-        <ApiKeyInput apiKey={apiKey} onSave={setApiKey} />
+        <ApiKeyInput
+          apiKey={apiKey}
+          ttsApiKey={ttsApiKey}
+          onSave={setApiKey}
+          onSaveTTS={setTtsApiKey}
+        />
 
-        {apiKey && (
+        {(apiKey || ttsApiKey) && (
           <>
             <FileUploader onFileSelect={handleFileSelect} />
 
