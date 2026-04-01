@@ -157,7 +157,9 @@ export function useTTS(apiKey) {
 
       const chunks = splitTextIntoChunks(fullText);
       setProgress({ current: 0, total: chunks.length });
-      console.log(`[TTS] Generating audio: ${chunks.length} chunk(s), voice: ${selectedVoice.name}`);
+      console.log(`%c[TTS] ═══════════════════════════════════════`, 'color: #e67e22; font-weight: bold');
+      console.log(`%c[TTS] ⏳ بدء توليد الصوت: ${chunks.length} جزء | الصوت: ${selectedVoice.name}`, 'color: #e67e22; font-weight: bold');
+      console.log(`%c[TTS] إجمالي النص: ${fullText.length} حرف`, 'color: #e67e22');
 
       const allPcmBuffers = [];
       const startTime = performance.now();
@@ -168,12 +170,15 @@ export function useTTS(apiKey) {
             setGenerating(false);
             return;
           }
-          console.log(`[TTS] Synthesizing chunk ${i + 1}/${chunks.length} (${new TextEncoder().encode(chunks[i]).length} bytes)...`);
+          const chunkBytes = new TextEncoder().encode(chunks[i]).length;
+          console.log(`%c[TTS] ⏳ جزء ${i + 1}/${chunks.length} (${chunkBytes} بايت)...`, 'color: #e67e22');
           setProgress({ current: i + 1, total: chunks.length });
+          const chunkStart = performance.now();
           const audioBase64 = await synthesizeChunk(chunks[i]);
           const pcmBuffer = base64ToArrayBuffer(audioBase64);
           allPcmBuffers.push(pcmBuffer);
-          console.log(`[TTS] Chunk ${i + 1} done (${(pcmBuffer.byteLength / 1024).toFixed(1)} KB PCM)`);
+          const chunkTime = ((performance.now() - chunkStart) / 1000).toFixed(2);
+          console.log(`%c[TTS] ✓ جزء ${i + 1} — ${chunkTime} ثانية (${(pcmBuffer.byteLength / 1024).toFixed(1)} KB صوت)`, 'color: #27ae60');
         }
 
         const totalLength = allPcmBuffers.reduce((sum, buf) => sum + buf.byteLength, 0);
@@ -192,9 +197,16 @@ export function useTTS(apiKey) {
         setAudioUrl(url);
 
         const totalTime = ((performance.now() - startTime) / 1000).toFixed(2);
-        console.log(`[TTS] Full audio generated in ${totalTime}s (${(wav.byteLength / (1024 * 1024)).toFixed(2)} MB WAV)`);
+        const sizeMB = (wav.byteLength / (1024 * 1024)).toFixed(2);
+        const durationSec = (combined.byteLength / (24000 * 2)).toFixed(1);
+        console.log(`%c[TTS] ═══════════════════════════════════════`, 'color: #27ae60; font-weight: bold');
+        console.log(`%c[TTS] ✓ اكتمل التوليد!`, 'color: #27ae60; font-weight: bold');
+        console.log(`%c[TTS]   الوقت: ${totalTime} ثانية`, 'color: #27ae60');
+        console.log(`%c[TTS]   الحجم: ${sizeMB} MB`, 'color: #27ae60');
+        console.log(`%c[TTS]   المدة: ~${durationSec} ثانية صوت`, 'color: #27ae60');
+        console.log(`%c[TTS] ═══════════════════════════════════════`, 'color: #27ae60; font-weight: bold');
       } catch (e) {
-        console.error('[TTS] Error:', e.message);
+        console.error(`%c[TTS] ✗ خطأ: ${e.message}`, 'color: #e74c3c; font-weight: bold');
         setError(e.message);
       } finally {
         setGenerating(false);

@@ -9,6 +9,8 @@ import { useTTS } from './hooks/useTTS';
 import { pdfToImages } from './utils/pdfToImages';
 import './App.css';
 
+const CONCURRENT_OCR = 3;
+
 function App() {
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem('gemini_api_key') || ''
@@ -26,9 +28,23 @@ function App() {
   const { extractText, loading, error } = useGeminiOCR(apiKey);
   const tts = useTTS(ttsApiKey);
 
+  const handleTextFileSelect = useCallback((textContent, name) => {
+    console.log(`%c[TXT] ملف نصي: ${name} (${textContent.length} حرف)`, 'color: #27ae60; font-weight: bold');
+    tts.stop();
+    setPages([]);
+    setCurrentPage(0);
+    setFileName(name);
+    setOcrProgress({ current: 0, total: 0 });
+    setTexts({ 0: textContent });
+    console.log(`%c[TXT] ✓ النص جاهز — يمكنك الآن توليد الصوت مباشرة`, 'color: #27ae60; font-weight: bold');
+  }, [tts]);
+
   const handleFileSelect = useCallback(
     async (file) => {
-      console.log(`[App] File selected: ${file.name} (${file.type}, ${(file.size / 1024).toFixed(1)} KB)`);
+      console.log(`%c[App] ═══════════════════════════════════════`, 'color: #0f3460; font-weight: bold');
+      console.log(`%c[App] ملف جديد: ${file.name}`, 'color: #0f3460; font-weight: bold');
+      console.log(`%c[App] النوع: ${file.type} | الحجم: ${(file.size / 1024).toFixed(1)} KB`, 'color: #0f3460');
+      console.log(`%c[App] ═══════════════════════════════════════`, 'color: #0f3460; font-weight: bold');
       tts.stop();
       setTexts({});
       setCurrentPage(0);
@@ -37,44 +53,63 @@ function App() {
 
       let imageList;
       if (file.type === 'application/pdf') {
-        console.log('[PDF] Converting PDF pages to images...');
+        console.log(`%c[PDF] ⏳ جاري تحويل صفحات PDF إلى صور...`, 'color: #e67e22; font-weight: bold');
         setConverting(true);
         const startConvert = performance.now();
         imageList = await pdfToImages(file);
         const convertTime = ((performance.now() - startConvert) / 1000).toFixed(2);
         setConverting(false);
-        console.log(`[PDF] Converted ${imageList.length} pages in ${convertTime}s`);
+        console.log(`%c[PDF] ✓ تم تحويل ${imageList.length} صفحة في ${convertTime} ثانية`, 'color: #27ae60; font-weight: bold');
       } else {
-        console.log('[Image] Reading image file...');
+        console.log(`%c[IMG] ⏳ جاري قراءة الصورة...`, 'color: #e67e22');
         const base64 = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result.split(',')[1]);
           reader.readAsDataURL(file);
         });
         imageList = [base64];
-        console.log(`[Image] Image loaded (${(base64.length / 1024).toFixed(1)} KB base64)`);
+        console.log(`%c[IMG] ✓ تم قراءة الصورة (${(base64.length / 1024).toFixed(1)} KB)`, 'color: #27ae60');
       }
 
       setPages(imageList);
       setOcrProgress({ current: 0, total: imageList.length });
-      console.log(`[OCR] Starting extraction for ${imageList.length} page(s)...`);
+      console.log(`%c[OCR] ═══════════════════════════════════════`, 'color: #8e44ad; font-weight: bold');
+      console.log(`%c[OCR] ⏳ بدء استخراج النص من ${imageList.length} صفحة (${CONCURRENT_OCR} طلبات متوازية)...`, 'color: #8e44ad; font-weight: bold');
 
       const newTexts = {};
+      let completed = 0;
       const startOcr = performance.now();
-      for (let i = 0; i < imageList.length; i++) {
-        console.log(`[OCR] Extracting page ${i + 1}/${imageList.length}...`);
-        setOcrProgress({ current: i + 1, total: imageList.length });
-        const pageStart = performance.now();
-        const text = await extractText(imageList[i]);
-        const pageTime = ((performance.now() - pageStart) / 1000).toFixed(2);
-        newTexts[i] = text;
-        setTexts({ ...newTexts });
-        console.log(`[OCR] Page ${i + 1} done in ${pageTime}s (${text.length} chars)`);
+
+      // Process pages in parallel batches
+      for (let batchStart = 0; batchStart < imageList.length; batchStart += CONCURRENT_OCR) {
+        const batchEnd = Math.min(batchStart + CONCURRENT_OCR, imageList.length);
+        const batch = [];
+
+        for (let i = batchStart; i < batchEnd; i++) {
+          batch.push(
+            (async () => {
+              const pageStart = performance.now();
+              console.log(`%c[OCR] ⏳ صفحة ${i + 1}/${imageList.length}...`, 'color: #8e44ad');
+              const text = await extractText(imageList[i]);
+              const pageTime = ((performance.now() - pageStart) / 1000).toFixed(2);
+              newTexts[i] = text;
+              completed++;
+              setOcrProgress({ current: completed, total: imageList.length });
+              setTexts({ ...newTexts });
+              console.log(`%c[OCR] ✓ صفحة ${i + 1} — ${pageTime} ثانية (${text.length} حرف)`, 'color: #27ae60');
+            })()
+          );
+        }
+
+        await Promise.all(batch);
       }
 
       const totalTime = ((performance.now() - startOcr) / 1000).toFixed(2);
-      console.log(`[OCR] All ${imageList.length} pages extracted in ${totalTime}s`);
+      const totalChars = Object.values(newTexts).reduce((sum, t) => sum + t.length, 0);
       setOcrProgress({ current: imageList.length, total: imageList.length });
+      console.log(`%c[OCR] ═══════════════════════════════════════`, 'color: #27ae60; font-weight: bold');
+      console.log(`%c[OCR] ✓ اكتمل! ${imageList.length} صفحة في ${totalTime} ثانية (${totalChars} حرف إجمالي)`, 'color: #27ae60; font-weight: bold');
+      console.log(`%c[OCR] ═══════════════════════════════════════`, 'color: #27ae60; font-weight: bold');
     },
     [extractText, tts]
   );
@@ -116,7 +151,7 @@ function App() {
     a.download = `${baseName}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    console.log(`[App] Text saved as ${baseName}.txt`);
+    console.log(`%c[App] ✓ تم حفظ النص: ${baseName}.txt`, 'color: #27ae60; font-weight: bold');
   }, [texts, fileName]);
 
   const hasTexts = Object.values(texts).some(Boolean);
@@ -140,7 +175,10 @@ function App() {
 
         {(apiKey || ttsApiKey) && (
           <>
-            <FileUploader onFileSelect={handleFileSelect} />
+            <FileUploader
+              onFileSelect={handleFileSelect}
+              onTextFileSelect={handleTextFileSelect}
+            />
 
             {fileName && (
               <div className="file-name">الملف: {fileName}</div>
@@ -155,7 +193,7 @@ function App() {
               </div>
             )}
 
-            {!converting && ocrProgress.total > 0 && ocrProgress.current <= ocrProgress.total && loading && (
+            {!converting && ocrProgress.total > 0 && ocrProgress.current < ocrProgress.total && loading && (
               <div className="ocr-progress">
                 <span>
                   جاري استخراج النص: صفحة {ocrProgress.current} من {ocrProgress.total}
@@ -169,12 +207,14 @@ function App() {
               </div>
             )}
 
-            <PageNavigator
-              currentPage={currentPage}
-              totalPages={pages.length}
-              onPageChange={handlePageChange}
-              loading={loading}
-            />
+            {pages.length > 1 && (
+              <PageNavigator
+                currentPage={currentPage}
+                totalPages={pages.length}
+                onPageChange={handlePageChange}
+                loading={loading}
+              />
+            )}
 
             <TextEditor
               text={currentText}
