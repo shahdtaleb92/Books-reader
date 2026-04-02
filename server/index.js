@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import booksRouter from './routes/books.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = join(__dirname, '..', 'uploads');
+const UPLOADS_DIR = process.env.FLY_APP_NAME ? '/data/uploads' : join(__dirname, '..', 'uploads');
 const DIST_DIR = join(__dirname, '..', 'dist');
 
 // Ensure uploads directory exists
