@@ -14,23 +14,23 @@ body {
 .app {
   max-width: 800px;
   margin: 0 auto;
-  padding: 2rem 1rem;
+  padding: 1.5rem 1rem;
 }
 
 header {
   text-align: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
 }
 
 header h1 {
-  font-size: 2rem;
+  font-size: 1.6rem;
   color: #16213e;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.3rem;
 }
 
 header p {
   color: #666;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 main {
@@ -67,7 +67,7 @@ main {
 
 /* Buttons */
 button {
-  padding: 0.6rem 1.2rem;
+  padding: 0.7rem 1.2rem;
   border: none;
   border-radius: 6px;
   background: #0f3460;
@@ -76,6 +76,7 @@ button {
   font-size: 0.9rem;
   font-family: inherit;
   transition: background 0.2s;
+  min-height: 44px;
 }
 
 button:hover:not(:disabled) {
@@ -87,34 +88,161 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* File Uploader */
-.file-uploader {
-  text-align: center;
+/* Library */
+.library-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
 }
 
-.file-uploader input[type='file'] {
-  display: none;
+.library-header h2 {
+  font-size: 1.3rem;
+  color: #16213e;
 }
 
-.upload-label {
+.upload-btn {
   display: inline-block;
-  padding: 1rem 2rem;
-  background: #e8f0fe;
-  border: 2px dashed #0f3460;
-  border-radius: 10px;
+  padding: 0.7rem 1.5rem;
+  background: #0f3460;
+  color: #fff;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
   transition: background 0.2s;
 }
 
-.upload-label:hover {
-  background: #d0e1fd;
+.upload-btn:hover {
+  background: #16213e;
 }
 
-.file-name {
+.library-empty {
   text-align: center;
-  color: #555;
-  font-size: 0.9rem;
+  padding: 3rem 1rem;
+  color: #888;
+  background: #fff;
+  border-radius: 10px;
+  border: 2px dashed #ddd;
+}
+
+.book-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.book-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.1s;
+  min-height: 70px;
+}
+
+.book-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.book-card:active {
+  transform: translateY(0);
+}
+
+.book-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.book-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.book-info h3 {
+  font-size: 1rem;
+  color: #16213e;
+  margin-bottom: 0.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-info p {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.book-date {
+  font-size: 0.75rem;
+  color: #aaa;
+}
+
+.delete-btn {
+  background: #c0392b;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.delete-btn:hover {
+  background: #96281b;
+}
+
+/* Extraction Progress */
+.extraction-progress {
+  text-align: center;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+}
+
+.extraction-progress span {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: #0f3460;
+  font-weight: 600;
+  animation: pulse 1.5s infinite;
+}
+
+/* Book Reader */
+.book-reader {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.reader-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.reader-header h2 {
+  font-size: 1.1rem;
+  color: #16213e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.back-btn {
+  background: #555;
+  flex-shrink: 0;
+}
+
+.back-btn:hover {
+  background: #333;
 }
 
 /* Page Navigator */
@@ -184,55 +312,68 @@ button:disabled {
   background: #1e8449;
 }
 
-/* TTS Controls */
-.tts-controls {
+/* Realtime TTS Controls */
+.realtime-tts {
   background: #fff;
-  padding: 1.5rem;
+  padding: 1rem 1.2rem;
   border-radius: 10px;
   border: 1px solid #e0e0e0;
 }
 
-.tts-controls h3 {
-  margin-bottom: 1rem;
+.realtime-tts h3 {
+  margin-bottom: 0.75rem;
   color: #16213e;
+  font-size: 1rem;
 }
 
 .tts-row {
   display: flex;
-  gap: 1.5rem;
-  margin-bottom: 1rem;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-.voice-select,
-.speed-control {
+.voice-select {
   flex: 1;
-  min-width: 200px;
+  min-width: 180px;
 }
 
-.voice-select label,
-.speed-control label {
+.voice-select label {
   display: block;
   font-size: 0.85rem;
   margin-bottom: 0.3rem;
   color: #555;
 }
 
-.voice-select select,
-.speed-control input[type='range'] {
-  width: 100%;
-}
-
 .voice-select select {
+  width: 100%;
   padding: 0.5rem;
   border: 1px solid #ccc;
   border-radius: 6px;
   font-size: 0.9rem;
   font-family: inherit;
+  min-height: 44px;
 }
 
-.speed-control input[type='range'] {
-  margin-top: 0.3rem;
+.auto-read-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.auto-read-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #555;
+}
+
+.auto-read-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
 }
 
 .tts-buttons {
@@ -247,6 +388,10 @@ button:disabled {
 
 .tts-buttons .stop-btn:hover {
   background: #96281b;
+}
+
+.tts-buttons .generating-btn {
+  animation: pulse 1.5s infinite;
 }
 
 /* OCR Progress */
@@ -280,7 +425,7 @@ button:disabled {
   transition: width 0.5s ease;
 }
 
-/* TTS Progress */
+/* TTS Progress (legacy full-book) */
 .tts-progress {
   margin-top: 1rem;
   background: #e0e0e0;
@@ -316,10 +461,6 @@ button:disabled {
   background: #1e8449;
 }
 
-.generating-btn {
-  animation: pulse 1.5s infinite;
-}
-
 /* Alerts */
 .warning {
   background: #fff3cd;
@@ -336,4 +477,68 @@ button:disabled {
   padding: 0.75rem 1rem;
   border-radius: 6px;
   border: 1px solid #f5c6cb;
+}
+
+/* Mobile improvements */
+@media (max-width: 600px) {
+  .app {
+    padding: 1rem 0.75rem;
+  }
+
+  header h1 {
+    font-size: 1.3rem;
+  }
+
+  .api-key-row {
+    flex-direction: column;
+  }
+
+  .library-header {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  .library-header h2 {
+    text-align: center;
+  }
+
+  .upload-btn {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .book-card {
+    padding: 0.75rem;
+  }
+
+  .reader-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reader-header h2 {
+    text-align: center;
+    white-space: normal;
+  }
+
+  .tts-row {
+    flex-direction: column;
+  }
+
+  .tts-buttons {
+    flex-direction: column;
+  }
+
+  .tts-buttons button {
+    width: 100%;
+  }
+
+  .page-navigator {
+    gap: 0.5rem;
+  }
+
+  .page-navigator button {
+    flex: 1;
+  }
 }
