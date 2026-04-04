@@ -3,12 +3,17 @@ import { useRef, useEffect } from 'react';
 export default function TextEditor({ text, onChange, loading, playing, currentWordIndex }) {
   const readingRef = useRef(null);
 
-  // Auto-scroll to highlighted word
+  // Auto-scroll to highlighted word within the container only
   useEffect(() => {
     if (!playing || currentWordIndex < 0 || !readingRef.current) return;
-    const activeWord = readingRef.current.querySelector('.word-active');
+    const container = readingRef.current;
+    const activeWord = container.querySelector('.word-active');
     if (activeWord) {
-      activeWord.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const containerRect = container.getBoundingClientRect();
+      const wordRect = activeWord.getBoundingClientRect();
+      const wordRelativeTop = wordRect.top - containerRect.top + container.scrollTop;
+      const targetScroll = wordRelativeTop - containerRect.height / 2;
+      container.scrollTo({ top: targetScroll, behavior: 'smooth' });
     }
   }, [currentWordIndex, playing]);
 
