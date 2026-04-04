@@ -149,3 +149,11 @@ export async function fetchSavedAudioPages(bookId, voice) {
   if (!res.ok) return [];
   return res.json();
 }
+
+export async function deletePageAudio(bookId, pageNum, voice) {
+  const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete audio');
+  return res.json();
+}

@@ -12,6 +12,7 @@ export default function RealtimeTTS({
   onPause,
   onResume,
   onStop,
+  onClearAudio,
   isPageCached,
   isPageSaved,
   error,
@@ -95,9 +96,28 @@ export default function RealtimeTTS({
         {(playing || generating) && (
           <button onClick={onStop} className="stop-btn">إيقاف</button>
         )}
+
+        {(cached || saved) && !playing && !generating && (
+          <button onClick={() => onClearAudio(currentPage)} className="clear-audio-btn">
+            حذف الصوت وإعادة التوليد
+          </button>
+        )}
       </div>
 
-      {error && <div className="error" style={{ marginTop: '0.5rem' }}>{error}</div>}
+      {error && (
+        <div className="error" style={{ marginTop: '0.5rem' }}>
+          {error}
+          {!generating && !playing && (
+            <button
+              onClick={onPlay}
+              style={{ marginRight: '0.5rem', marginTop: '0.5rem' }}
+              className="retry-btn"
+            >
+              إعادة المحاولة
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -295,6 +295,20 @@ button:disabled {
   background: #96281b;
 }
 
+.clear-audio-btn {
+  background: #e67e22;
+  font-size: 0.8rem;
+}
+
+.clear-audio-btn:hover {
+  background: #d35400;
+}
+
+.retry-btn {
+  background: #0f3460;
+  font-size: 0.85rem;
+}
+
 /* Extraction Progress */
 .extraction-progress {
   text-align: center;

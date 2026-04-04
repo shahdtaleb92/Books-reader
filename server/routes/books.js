@@ -396,12 +396,23 @@ router.post('/:id/audio/:pageNum', (req, res) => {
 router.get('/:id/audio', (req, res) => {
   const voice = req.query.voice;
   if (!voice) return res.status(400).json({ error: 'voice query param required' });
-
   const rows = db.prepare(
     'SELECT page_number FROM audio WHERE book_id = ? AND voice_name = ?'
   ).all(req.params.id, voice);
 
   res.json(rows.map(r => r.page_number));
+});
+
+// Delete saved audio for a specific page
+router.delete('/:id/audio/:pageNum', (req, res) => {
+  const voice = req.query.voice;
+  if (!voice) return res.status(400).json({ error: 'voice query param required' });
+
+  db.prepare(
+    'DELETE FROM audio WHERE book_id = ? AND page_number = ? AND voice_name = ?'
+  ).run(req.params.id, req.params.pageNum, voice);
+
+  res.json({ success: true });
 });
 
 export default router;

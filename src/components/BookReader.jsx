@@ -171,6 +171,7 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
           onPause={pageTTS.pause}
           onResume={pageTTS.resume}
           onStop={pageTTS.stop}
+          onClearAudio={pageTTS.clearPageAudio}
           isPageCached={pageTTS.isPageCached}
           isPageSaved={pageTTS.isPageSaved}
           error={pageTTS.error}

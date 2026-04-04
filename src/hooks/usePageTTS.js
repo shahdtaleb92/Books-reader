@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ARABIC_VOICES, generateAudioForText } from '../utils/ttsUtils.js';
-import { fetchPageAudio, savePageAudio, fetchSavedAudioPages } from '../utils/api.js';
+import { fetchPageAudio, savePageAudio, fetchSavedAudioPages, deletePageAudio } from '../utils/api.js';
 
 export function usePageTTS(apiKey, bookId) {
   const [selectedVoice, setSelectedVoice] = useState(() => {
@@ -25,6 +25,9 @@ export function usePageTTS(apiKey, bookId) {
   const generatingPagesRef = useRef(new Set());
   const stoppedRef = useRef(false);
   const animFrameRef = useRef(null);
+  // Store texts ref so onended can access them for next-page playback
+  const textsRef = useRef({});
+  const totalPagesRef = useRef(0);
 
   // Persist voice selection
   useEffect(() => {
@@ -54,7 +57,6 @@ export function usePageTTS(apiKey, bookId) {
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
 
-    // Build cumulative char weights for proportional mapping
     const totalChars = words.reduce((sum, w) => sum + w.length, 0);
     const cumulative = [];
     let acc = 0;
@@ -167,12 +169,18 @@ export function usePageTTS(apiKey, bookId) {
         setPaused(false);
         setCurrentReadingPage(-1);
         stopWordTracking();
+
+        // Auto-prepare next page audio in background
+        const nextPage = pageNum + 1;
+        if (nextPage < totalPagesRef.current && textsRef.current[nextPage]) {
+          generatePageAudio(nextPage, textsRef.current[nextPage]);
+        }
       };
 
       audio.onerror = () => {
         setPlaying(false);
         setPaused(false);
-        setError('Error playing audio');
+        setError('خطأ في تشغيل الصوت');
         stopWordTracking();
       };
 
@@ -181,12 +189,23 @@ export function usePageTTS(apiKey, bookId) {
       setPaused(false);
       setGenerating(false);
       startWordTracking(text);
+
+      // Also start preparing the next page right away while current plays
+      const nextPage = pageNum + 1;
+      if (nextPage < totalPagesRef.current && textsRef.current[nextPage] && !audioCacheRef.current.has(nextPage)) {
+        generatePageAudio(nextPage, textsRef.current[nextPage]);
+      }
     },
     [generatePageAudio, playbackRate, startWordTracking, stopWordTracking]
   );
 
   const prefetchPages = useCallback(
     (currentPage, texts) => {
+      // Store refs for onended callback
+      textsRef.current = texts;
+      const maxPage = Math.max(...Object.keys(texts).map(Number), 0);
+      totalPagesRef.current = maxPage + 1;
+
       const pagesToFetch = [currentPage - 1, currentPage, currentPage + 1];
       for (const p of pagesToFetch) {
         if (p >= 0 && texts[p] && !audioCacheRef.current.has(p)) {
@@ -224,6 +243,33 @@ export function usePageTTS(apiKey, bookId) {
     stopWordTracking();
   }, [stopWordTracking]);
 
+  // Delete cached/saved audio for a page so it can be regenerated
+  const clearPageAudio = useCallback(
+    async (pageNum) => {
+      // Remove from browser cache
+      const cached = audioCacheRef.current.get(pageNum);
+      if (cached) {
+        URL.revokeObjectURL(cached);
+        audioCacheRef.current.delete(pageNum);
+      }
+
+      // Remove from server
+      if (bookId) {
+        try {
+          await deletePageAudio(bookId, pageNum, selectedVoice.name);
+          setSavedPages((prev) => {
+            const next = new Set(prev);
+            next.delete(pageNum);
+            return next;
+          });
+        } catch (e) {
+          // ignore
+        }
+      }
+    },
+    [bookId, selectedVoice]
+  );
+
   // Clear browser cache when voice changes (server cache remains)
   useEffect(() => {
     for (const url of audioCacheRef.current.values()) {
@@ -260,6 +306,7 @@ export function usePageTTS(apiKey, bookId) {
     prefetchPages,
     isPageCached,
     isPageSaved,
+    clearPageAudio,
     playbackRate,
     setPlaybackRate,
   };
