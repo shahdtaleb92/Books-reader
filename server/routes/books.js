@@ -220,8 +220,13 @@ router.post('/url', async (req, res) => {
     }
 
     if (response.status === 429 || response.status === 403) {
-      // Direct fetch blocked - try proxy services server-side
+      // Direct fetch blocked - try multiple fallbacks server-side
       const proxies = [
+        // Google web cache
+        `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(url)}`,
+        // Archive.org latest snapshot
+        `https://web.archive.org/web/2024/${url}`,
+        // Proxy services
         `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
         `https://corsproxy.io/?${encodeURIComponent(url)}`,
       ];
@@ -232,13 +237,15 @@ router.post('/url', async (req, res) => {
           const proxyRes = await fetch(proxyUrl, {
             headers,
             signal: AbortSignal.timeout(15000),
+            redirect: 'follow',
           });
           if (proxyRes.ok) {
             proxyHtml = await proxyRes.text();
-            break;
+            if (proxyHtml && proxyHtml.length > 200) break;
+            proxyHtml = null;
           }
         } catch {
-          // try next proxy
+          // try next
         }
       }
 
@@ -248,7 +255,6 @@ router.post('/url', async (req, res) => {
         });
       }
 
-      // Use proxy HTML and continue processing below
       return processHtml(proxyHtml, url, res);
     }
 
