@@ -124,6 +124,53 @@ router.post('/text', (req, res) => {
   res.status(201).json(book);
 });
 
+// Helper: extract text from HTML and save as book
+function processHtml(html, url, res) {
+  let text = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+    .replace(/<[^>]+>/g, '\n')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (!text || text.length < 10) {
+    return res.status(400).json({ error: 'لم يتم العثور على نص في هذا الرابط' });
+  }
+
+  const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
+  const pageTitle = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
+
+  const pageSize = 2000;
+  const pages = [];
+  for (let i = 0; i < text.length; i += pageSize) {
+    pages.push(text.substring(i, i + pageSize));
+  }
+
+  const result = db.prepare(
+    'INSERT INTO books (title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, 1)'
+  ).run(pageTitle, url, '', 'url', pages.length);
+
+  const upsert = db.prepare(
+    'INSERT INTO pages (book_id, page_number, extracted_text) VALUES (?, ?, ?) ON CONFLICT(book_id, page_number) DO UPDATE SET extracted_text = excluded.extracted_text'
+  );
+  const insertMany = db.transaction((bookId, pagesArr) => {
+    pagesArr.forEach((pageText, i) => upsert.run(bookId, i, pageText));
+  });
+  insertMany(result.lastInsertRowid, pages);
+
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(result.lastInsertRowid);
+  return res.status(201).json(book);
+}
+
 // Create book from URL
 router.post('/url', async (req, res) => {
   const { url, clientText } = req.body;
@@ -173,10 +220,36 @@ router.post('/url', async (req, res) => {
     }
 
     if (response.status === 429 || response.status === 403) {
-      return res.status(response.status).json({
-        error: 'blocked',
-        message: 'الموقع يمنع الوصول الآلي. جاري المحاولة من المتصفح...',
-      });
+      // Direct fetch blocked - try proxy services server-side
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      ];
+
+      let proxyHtml = null;
+      for (const proxyUrl of proxies) {
+        try {
+          const proxyRes = await fetch(proxyUrl, {
+            headers,
+            signal: AbortSignal.timeout(15000),
+          });
+          if (proxyRes.ok) {
+            proxyHtml = await proxyRes.text();
+            break;
+          }
+        } catch {
+          // try next proxy
+        }
+      }
+
+      if (!proxyHtml) {
+        return res.status(429).json({
+          error: 'الموقع يمنع الوصول الآلي. انسخ النص من المتصفح واستخدم "لصق من الحافظة"',
+        });
+      }
+
+      // Use proxy HTML and continue processing below
+      return processHtml(proxyHtml, url, res);
     }
 
     if (!response.ok) {
@@ -184,52 +257,7 @@ router.post('/url', async (req, res) => {
     }
 
     const html = await response.text();
-
-    // Strip HTML tags, decode entities, extract text
-    let text = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-      .replace(/<[^>]+>/g, '\n')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-
-    if (!text || text.length < 10) {
-      return res.status(400).json({ error: 'No meaningful text found at this URL' });
-    }
-
-    // Extract title from HTML
-    const titleMatch = html.match(/<title[^>]*>(.*?)<\/title>/i);
-    const pageTitle = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
-
-    const pageSize = 2000;
-    const pages = [];
-    for (let i = 0; i < text.length; i += pageSize) {
-      pages.push(text.substring(i, i + pageSize));
-    }
-
-    const result = db.prepare(
-      'INSERT INTO books (title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, 1)'
-    ).run(pageTitle, url, '', 'url', pages.length);
-
-    const upsert = db.prepare(
-      'INSERT INTO pages (book_id, page_number, extracted_text) VALUES (?, ?, ?) ON CONFLICT(book_id, page_number) DO UPDATE SET extracted_text = excluded.extracted_text'
-    );
-    const insertMany = db.transaction((bookId, pagesArr) => {
-      pagesArr.forEach((pageText, i) => upsert.run(bookId, i, pageText));
-    });
-    insertMany(result.lastInsertRowid, pages);
-
-    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(result.lastInsertRowid);
-    res.status(201).json(book);
+    return processHtml(html, url, res);
   } catch (e) {
     res.status(500).json({ error: 'Failed to fetch URL: ' + e.message });
   }
