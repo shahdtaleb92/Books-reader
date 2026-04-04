@@ -126,9 +126,35 @@ router.post('/text', (req, res) => {
 
 // Create book from URL
 router.post('/url', async (req, res) => {
-  const { url } = req.body;
+  const { url, clientText } = req.body;
   if (!url || !url.trim()) {
     return res.status(400).json({ error: 'url is required' });
+  }
+
+  // If client already fetched the text (fallback mode), use it directly
+  if (clientText && clientText.trim()) {
+    const pageTitle = req.body.title || new URL(url).hostname;
+    const text = clientText.trim();
+    const pageSize = 2000;
+    const pages = [];
+    for (let i = 0; i < text.length; i += pageSize) {
+      pages.push(text.substring(i, i + pageSize));
+    }
+
+    const result = db.prepare(
+      'INSERT INTO books (title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, 1)'
+    ).run(pageTitle, url, '', 'url', pages.length);
+
+    const upsert = db.prepare(
+      'INSERT INTO pages (book_id, page_number, extracted_text) VALUES (?, ?, ?) ON CONFLICT(book_id, page_number) DO UPDATE SET extracted_text = excluded.extracted_text'
+    );
+    const insertMany = db.transaction((bookId, pagesArr) => {
+      pagesArr.forEach((pageText, i) => upsert.run(bookId, i, pageText));
+    });
+    insertMany(result.lastInsertRowid, pages);
+
+    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(result.lastInsertRowid);
+    return res.status(201).json(book);
   }
 
   try {
@@ -136,14 +162,21 @@ router.post('/url', async (req, res) => {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+      'Accept-Encoding': 'identity',
     };
 
     let response;
     for (let attempt = 0; attempt < 3; attempt++) {
       response = await fetch(url, { headers, signal: AbortSignal.timeout(20000), redirect: 'follow' });
       if (response.status !== 429) break;
-      // Wait before retry: 2s, 4s
       await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
+    }
+
+    if (response.status === 429 || response.status === 403) {
+      return res.status(response.status).json({
+        error: 'blocked',
+        message: 'الموقع يمنع الوصول الآلي. جاري المحاولة من المتصفح...',
+      });
     }
 
     if (!response.ok) {

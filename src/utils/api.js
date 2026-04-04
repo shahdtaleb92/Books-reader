@@ -28,16 +28,50 @@ export async function createTextBook(title, text) {
 }
 
 export async function createBookFromUrl(url) {
+  // Try server-side fetch first
   const res = await fetch(`${BASE}/url`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'Failed to fetch URL');
+
+  if (res.ok) return res.json();
+
+  const data = await res.json().catch(() => ({}));
+
+  // If server was blocked (429/403), try fetching from browser via CORS proxy
+  if (data.error === 'blocked') {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    const proxyRes = await fetch(proxyUrl, { signal: AbortSignal.timeout(20000) });
+
+    if (!proxyRes.ok) {
+      throw new Error('الموقع يمنع الوصول. انسخ النص من المتصفح واستخدم "لصق من الحافظة"');
+    }
+
+    const html = await proxyRes.text();
+    // Extract text from HTML client-side
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // Remove scripts, styles, nav, etc.
+    doc.querySelectorAll('script, style, nav, header, footer, aside, iframe').forEach(el => el.remove());
+    const text = doc.body?.innerText?.trim() || '';
+
+    if (!text || text.length < 10) {
+      throw new Error('لم يتم العثور على نص في هذا الرابط. انسخ النص واستخدم "لصق من الحافظة"');
+    }
+
+    const title = doc.querySelector('title')?.textContent?.trim() || new URL(url).hostname;
+
+    // Send extracted text to server to create the book
+    const saveRes = await fetch(`${BASE}/url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, clientText: text, title }),
+    });
+    if (!saveRes.ok) throw new Error('Failed to save book');
+    return saveRes.json();
   }
-  return res.json();
+
+  throw new Error(data.error || data.message || 'فشل جلب الرابط');
 }
 
 export async function fetchBook(id) {
