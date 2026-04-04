@@ -5,6 +5,7 @@ export default function ApiKeyInput({ apiKey, ttsApiKey, onSave, onSaveTTS }) {
   const [ttsKey, setTtsKey] = useState(ttsApiKey);
   const [visible, setVisible] = useState(false);
   const [ttsVisible, setTtsVisible] = useState(false);
+  const [collapsed, setCollapsed] = useState(!!(apiKey && ttsApiKey));
 
   const handleSave = () => {
     const trimmed = key.trim();
@@ -19,12 +20,30 @@ export default function ApiKeyInput({ apiKey, ttsApiKey, onSave, onSaveTTS }) {
     if (trimmed) {
       localStorage.setItem('tts_api_key', trimmed);
       onSaveTTS(trimmed);
+      if (key.trim()) setCollapsed(true);
     }
   };
 
+  if (collapsed) {
+    return (
+      <div className="api-key-collapsed">
+        <button onClick={() => setCollapsed(false)} className="settings-toggle-btn">
+          اعدادات API
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="api-key-section">
-      <label htmlFor="api-key">مفتاح Gemini API (لاستخراج النص)</label>
+      <div className="api-key-header">
+        <label htmlFor="api-key">مفتاح Gemini API (لاستخراج النص)</label>
+        {apiKey && ttsApiKey && (
+          <button onClick={() => setCollapsed(true)} className="collapse-btn">
+            اخفاء
+          </button>
+        )}
+      </div>
       <div className="api-key-row">
         <input
           id="api-key"
@@ -42,7 +61,7 @@ export default function ApiKeyInput({ apiKey, ttsApiKey, onSave, onSaveTTS }) {
         </button>
       </div>
 
-      <label htmlFor="tts-api-key" style={{ marginTop: '1rem' }}>
+      <label htmlFor="tts-api-key" style={{ marginTop: '1rem', display: 'block', fontWeight: 600, marginBottom: '0.5rem' }}>
         مفتاح TTS API (للقراءة الصوتية)
       </label>
       <div className="api-key-row">

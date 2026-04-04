@@ -13,8 +13,14 @@ export default function RealtimeTTS({
   onResume,
   onStop,
   isPageCached,
+  isPageSaved,
   error,
+  playbackRate,
+  onPlaybackRateChange,
 }) {
+  const cached = isPageCached(currentPage);
+  const saved = isPageSaved(currentPage);
+
   return (
     <div className="realtime-tts">
       <h3>القراءة الصوتية الفورية</h3>
@@ -39,6 +45,19 @@ export default function RealtimeTTS({
           </select>
         </div>
 
+        <div className="speed-control">
+          <label htmlFor="rt-speed">السرعة: {playbackRate}x</label>
+          <input
+            id="rt-speed"
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.25"
+            value={playbackRate}
+            onChange={(e) => onPlaybackRateChange(parseFloat(e.target.value))}
+          />
+        </div>
+
         <div className="auto-read-toggle">
           <label>
             <input
@@ -46,7 +65,7 @@ export default function RealtimeTTS({
               checked={autoRead}
               onChange={(e) => onAutoReadChange(e.target.checked)}
             />
-            قراءة تلقائية عند تغيير الصفحة
+            قراءة تلقائية
           </label>
         </div>
       </div>
@@ -55,7 +74,7 @@ export default function RealtimeTTS({
         {!playing && !generating && (
           <button onClick={onPlay}>
             قراءة الصفحة {currentPage + 1}
-            {isPageCached(currentPage) ? ' (محفوظة)' : ''}
+            {saved ? ' (محفوظة)' : cached ? ' (مؤقتة)' : ''}
           </button>
         )}
 

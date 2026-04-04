@@ -21,8 +21,10 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     filename TEXT NOT NULL,
-    filepath TEXT NOT NULL,
+    filepath TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT 'pdf',
     total_pages INTEGER DEFAULT 0,
+    last_page INTEGER DEFAULT 0,
     extraction_done INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -34,6 +36,25 @@ db.exec(`
     extracted_text TEXT DEFAULT '',
     UNIQUE(book_id, page_number)
   );
+
+  CREATE TABLE IF NOT EXISTS audio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    page_number INTEGER NOT NULL,
+    voice_name TEXT NOT NULL,
+    audio_data BLOB NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(book_id, page_number, voice_name)
+  );
 `);
+
+// Migrations for existing databases
+const columns = db.prepare("PRAGMA table_info(books)").all().map(c => c.name);
+if (!columns.includes('source_type')) {
+  db.exec("ALTER TABLE books ADD COLUMN source_type TEXT NOT NULL DEFAULT 'pdf'");
+}
+if (!columns.includes('last_page')) {
+  db.exec("ALTER TABLE books ADD COLUMN last_page INTEGER DEFAULT 0");
+}
 
 export default db;

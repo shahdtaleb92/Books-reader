@@ -1,21 +1,93 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ARABIC_VOICES, generateAudioForText } from '../utils/ttsUtils.js';
+import { fetchPageAudio, savePageAudio, fetchSavedAudioPages } from '../utils/api.js';
 
-export function usePageTTS(apiKey) {
-  const [selectedVoice, setSelectedVoice] = useState(ARABIC_VOICES[0]);
+export function usePageTTS(apiKey, bookId) {
+  const [selectedVoice, setSelectedVoice] = useState(() => {
+    const saved = localStorage.getItem('tts_voice');
+    const found = ARABIC_VOICES.find((v) => v.name === saved);
+    return found || ARABIC_VOICES[0];
+  });
   const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [autoRead, setAutoRead] = useState(false);
   const [currentReadingPage, setCurrentReadingPage] = useState(-1);
   const [error, setError] = useState(null);
+  const [playbackRate, setPlaybackRate] = useState(() => {
+    return parseFloat(localStorage.getItem('tts_speed') || '1');
+  });
+  const [currentWordIndex, setCurrentWordIndex] = useState(-1);
+  const [savedPages, setSavedPages] = useState(new Set());
 
-  const audioCacheRef = useRef(new Map()); // pageNum -> audioUrl
+  const audioCacheRef = useRef(new Map());
   const audioRef = useRef(null);
   const generatingPagesRef = useRef(new Set());
   const stoppedRef = useRef(false);
+  const animFrameRef = useRef(null);
 
-  // Generate audio for a specific page
+  // Persist voice selection
+  useEffect(() => {
+    localStorage.setItem('tts_voice', selectedVoice.name);
+  }, [selectedVoice]);
+
+  // Persist playback speed
+  useEffect(() => {
+    localStorage.setItem('tts_speed', String(playbackRate));
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
+
+  // Load saved audio pages list from server
+  useEffect(() => {
+    if (bookId && selectedVoice) {
+      fetchSavedAudioPages(bookId, selectedVoice.name)
+        .then((pages) => setSavedPages(new Set(pages)))
+        .catch(() => {});
+    }
+  }, [bookId, selectedVoice]);
+
+  // Word tracking animation loop
+  const startWordTracking = useCallback((text) => {
+    if (!text) return;
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return;
+
+    // Build cumulative char weights for proportional mapping
+    const totalChars = words.reduce((sum, w) => sum + w.length, 0);
+    const cumulative = [];
+    let acc = 0;
+    for (const w of words) {
+      acc += w.length;
+      cumulative.push(acc / totalChars);
+    }
+
+    const tick = () => {
+      const audio = audioRef.current;
+      if (!audio || audio.paused) {
+        animFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      const progress = audio.currentTime / audio.duration;
+      let idx = cumulative.findIndex((c) => c >= progress);
+      if (idx === -1) idx = words.length - 1;
+      setCurrentWordIndex(idx);
+      animFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    animFrameRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const stopWordTracking = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    setCurrentWordIndex(-1);
+  }, []);
+
+  // Generate audio for a specific page (check server first)
   const generatePageAudio = useCallback(
     async (pageNum, text) => {
       if (!apiKey || !text || !text.trim()) return null;
@@ -26,23 +98,43 @@ export function usePageTTS(apiKey) {
       setGenerating(true);
 
       try {
+        // Check server cache first
+        if (bookId) {
+          const serverAudio = await fetchPageAudio(bookId, pageNum, selectedVoice.name);
+          if (serverAudio) {
+            audioCacheRef.current.set(pageNum, serverAudio);
+            generatingPagesRef.current.delete(pageNum);
+            if (generatingPagesRef.current.size === 0) setGenerating(false);
+            return serverAudio;
+          }
+        }
+
+        // Generate fresh audio
         const audioUrl = await generateAudioForText(apiKey, text, selectedVoice.name);
         if (audioUrl) {
           audioCacheRef.current.set(pageNum, audioUrl);
+
+          // Save to server in background
+          if (bookId) {
+            fetch(audioUrl)
+              .then((r) => r.blob())
+              .then((blob) => {
+                savePageAudio(bookId, pageNum, selectedVoice.name, blob).catch(() => {});
+                setSavedPages((prev) => new Set([...prev, pageNum]));
+              })
+              .catch(() => {});
+          }
         }
         return audioUrl;
       } catch (e) {
-        console.error(`[PageTTS] Error generating page ${pageNum}:`, e.message);
         setError(e.message);
         return null;
       } finally {
         generatingPagesRef.current.delete(pageNum);
-        if (generatingPagesRef.current.size === 0) {
-          setGenerating(false);
-        }
+        if (generatingPagesRef.current.size === 0) setGenerating(false);
       }
     },
-    [apiKey, selectedVoice]
+    [apiKey, selectedVoice, bookId]
   );
 
   // Play audio for a specific page
@@ -50,8 +142,8 @@ export function usePageTTS(apiKey) {
     async (pageNum, text) => {
       stoppedRef.current = false;
       setError(null);
+      stopWordTracking();
 
-      // Stop current playback
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -67,29 +159,32 @@ export function usePageTTS(apiKey) {
       }
 
       const audio = new Audio(audioUrl);
+      audio.playbackRate = playbackRate;
       audioRef.current = audio;
 
       audio.onended = () => {
         setPlaying(false);
         setPaused(false);
         setCurrentReadingPage(-1);
+        stopWordTracking();
       };
 
       audio.onerror = () => {
         setPlaying(false);
         setPaused(false);
         setError('Error playing audio');
+        stopWordTracking();
       };
 
       await audio.play();
       setPlaying(true);
       setPaused(false);
       setGenerating(false);
+      startWordTracking(text);
     },
-    [generatePageAudio]
+    [generatePageAudio, playbackRate, startWordTracking, stopWordTracking]
   );
 
-  // Pre-fetch surrounding pages
   const prefetchPages = useCallback(
     (currentPage, texts) => {
       const pagesToFetch = [currentPage - 1, currentPage, currentPage + 1];
@@ -126,11 +221,11 @@ export function usePageTTS(apiKey) {
     setPlaying(false);
     setPaused(false);
     setCurrentReadingPage(-1);
-  }, []);
+    stopWordTracking();
+  }, [stopWordTracking]);
 
-  // Clear cache when voice changes
+  // Clear browser cache when voice changes (server cache remains)
   useEffect(() => {
-    // Revoke old URLs
     for (const url of audioCacheRef.current.values()) {
       URL.revokeObjectURL(url);
     }
@@ -142,6 +237,10 @@ export function usePageTTS(apiKey) {
     return audioCacheRef.current.has(pageNum);
   }, []);
 
+  const isPageSaved = useCallback((pageNum) => {
+    return savedPages.has(pageNum);
+  }, [savedPages]);
+
   return {
     arabicVoices: ARABIC_VOICES,
     selectedVoice,
@@ -152,6 +251,7 @@ export function usePageTTS(apiKey) {
     autoRead,
     setAutoRead,
     currentReadingPage,
+    currentWordIndex,
     error,
     playPage,
     pause,
@@ -159,5 +259,8 @@ export function usePageTTS(apiKey) {
     stop,
     prefetchPages,
     isPageCached,
+    isPageSaved,
+    playbackRate,
+    setPlaybackRate,
   };
 }

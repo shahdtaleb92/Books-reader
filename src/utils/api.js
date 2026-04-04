@@ -8,12 +8,35 @@ export async function fetchBooks() {
 
 export async function uploadBook(file, totalPages) {
   const form = new FormData();
-  form.append('pdf', file);
-  form.append('title', file.name.replace(/\.pdf$/i, ''));
+  form.append('file', file);
+  form.append('title', file.name.replace(/\.[^.]+$/, ''));
   if (totalPages) form.append('totalPages', totalPages);
 
   const res = await fetch(BASE, { method: 'POST', body: form });
   if (!res.ok) throw new Error('Failed to upload book');
+  return res.json();
+}
+
+export async function createTextBook(title, text) {
+  const res = await fetch(`${BASE}/text`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, text }),
+  });
+  if (!res.ok) throw new Error('Failed to create text book');
+  return res.json();
+}
+
+export async function createBookFromUrl(url) {
+  const res = await fetch(`${BASE}/url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch URL');
+  }
   return res.json();
 }
 
@@ -55,6 +78,40 @@ export async function savePageText(bookId, pageNum, text) {
   return res.json();
 }
 
+export async function saveReadingPosition(bookId, page) {
+  const res = await fetch(`${BASE}/${bookId}/position`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page }),
+  });
+  if (!res.ok) throw new Error('Failed to save position');
+  return res.json();
+}
+
 export function getBookPdfUrl(bookId) {
   return `${BASE}/${bookId}/pdf`;
+}
+
+// Audio persistence
+export async function fetchPageAudio(bookId, pageNum, voice) {
+  const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Failed to fetch audio');
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+export async function savePageAudio(bookId, pageNum, voice, blob) {
+  const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`, {
+    method: 'POST',
+    body: blob,
+  });
+  if (!res.ok) throw new Error('Failed to save audio');
+  return res.json();
+}
+
+export async function fetchSavedAudioPages(bookId, voice) {
+  const res = await fetch(`${BASE}/${bookId}/audio?voice=${encodeURIComponent(voice)}`);
+  if (!res.ok) return [];
+  return res.json();
 }

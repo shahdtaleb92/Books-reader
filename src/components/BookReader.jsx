@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { fetchBook, fetchPageTexts, savePageText, getBookPdfUrl } from '../utils/api.js';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetchBook, fetchPageTexts, savePageText, getBookPdfUrl, saveReadingPosition } from '../utils/api.js';
 import { pdfToImages } from '../utils/pdfToImages.js';
 import { useGeminiOCR } from '../hooks/useGeminiOCR.js';
 import { usePageTTS } from '../hooks/usePageTTS.js';
@@ -14,9 +14,10 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   const [currentPage, setCurrentPage] = useState(0);
   const [loadingBook, setLoadingBook] = useState(true);
   const [error, setError] = useState(null);
+  const positionTimerRef = useRef(null);
 
   const { extractText, loading: ocrLoading } = useGeminiOCR(apiKey);
-  const pageTTS = usePageTTS(ttsApiKey);
+  const pageTTS = usePageTTS(ttsApiKey, bookId);
 
   // Load book data and texts
   useEffect(() => {
@@ -32,14 +33,21 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         setBook(bookData);
         setTexts(pageTexts);
 
-        // Load PDF pages as images for display
-        const pdfUrl = getBookPdfUrl(bookId);
-        const res = await fetch(pdfUrl);
-        const blob = await res.blob();
-        const file = new File([blob], bookData.filename, { type: 'application/pdf' });
-        const images = await pdfToImages(file);
-        if (cancelled) return;
-        setPages(images);
+        // Restore reading position
+        if (bookData.last_page > 0) {
+          setCurrentPage(bookData.last_page);
+        }
+
+        // Load PDF pages as images (only for PDF books)
+        if (bookData.source_type === 'pdf') {
+          const pdfUrl = getBookPdfUrl(bookId);
+          const res = await fetch(pdfUrl);
+          const blob = await res.blob();
+          const file = new File([blob], bookData.filename, { type: 'application/pdf' });
+          const images = await pdfToImages(file);
+          if (cancelled) return;
+          setPages(images);
+        }
       } catch (e) {
         if (!cancelled) setError(e.message);
       } finally {
@@ -49,7 +57,7 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     return () => { cancelled = true; };
   }, [bookId]);
 
-  // Pre-fetch TTS for surrounding pages when page changes
+  // Pre-fetch TTS for surrounding pages
   useEffect(() => {
     if (ttsApiKey && Object.keys(texts).length > 0) {
       pageTTS.prefetchPages(currentPage, texts);
@@ -63,16 +71,28 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     }
   }, [currentPage, pageTTS.autoRead]);
 
+  // Save reading position (debounced)
+  useEffect(() => {
+    if (positionTimerRef.current) clearTimeout(positionTimerRef.current);
+    positionTimerRef.current = setTimeout(() => {
+      saveReadingPosition(bookId, currentPage).catch(() => {});
+    }, 1000);
+    return () => {
+      if (positionTimerRef.current) clearTimeout(positionTimerRef.current);
+    };
+  }, [currentPage, bookId]);
+
+  const totalPages = book?.source_type === 'pdf' ? pages.length : (book?.total_pages || 0);
+
   const handlePageChange = useCallback(
     async (pageIndex) => {
       pageTTS.stop();
       setCurrentPage(pageIndex);
 
-      // If text not extracted yet, run OCR
+      // If text not extracted yet for PDF, run OCR
       if (texts[pageIndex] === undefined && pages[pageIndex] && apiKey) {
         const text = await extractText(pages[pageIndex]);
         setTexts((prev) => ({ ...prev, [pageIndex]: text }));
-        // Save to server
         savePageText(bookId, pageIndex, text).catch(console.error);
       }
     },
@@ -119,10 +139,10 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         {book && <h2>{book.title}</h2>}
       </div>
 
-      {pages.length > 1 && (
+      {totalPages > 1 && (
         <PageNavigator
           currentPage={currentPage}
-          totalPages={pages.length}
+          totalPages={totalPages}
           onPageChange={handlePageChange}
           loading={ocrLoading}
         />
@@ -132,6 +152,8 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         text={currentText}
         onChange={handleTextChange}
         loading={ocrLoading}
+        playing={pageTTS.playing}
+        currentWordIndex={pageTTS.currentWordIndex}
       />
 
       {ttsApiKey && currentText && (
@@ -150,7 +172,10 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
           onResume={pageTTS.resume}
           onStop={pageTTS.stop}
           isPageCached={pageTTS.isPageCached}
+          isPageSaved={pageTTS.isPageSaved}
           error={pageTTS.error}
+          playbackRate={pageTTS.playbackRate}
+          onPlaybackRateChange={pageTTS.setPlaybackRate}
         />
       )}
     </div>
