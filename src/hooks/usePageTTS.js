@@ -57,13 +57,36 @@ export function usePageTTS(apiKey, bookId) {
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
 
-    const totalChars = words.reduce((sum, w) => sum + w.length, 0);
+    // Weight each word: base weight of 1.0 per word (TTS gives ~equal time per word)
+    // + extra weight for punctuation pauses at end of words
+    const PAUSE_FULL = 1.8;    // . ؟ ! — long pause
+    const PAUSE_MEDIUM = 1.2;  // ، ؛ : — medium pause
+    const PAUSE_NEWLINE = 1.5; // paragraph breaks
+
+    const weights = words.map((w, i) => {
+      let weight = 1.0;
+      const lastChar = w[w.length - 1];
+      if ('.؟!。'.includes(lastChar)) weight += PAUSE_FULL;
+      else if ('،؛:,;'.includes(lastChar)) weight += PAUSE_MEDIUM;
+      // Check if next word starts a new paragraph (large gap in original text)
+      if (i < words.length - 1) {
+        const pos = text.indexOf(words[i + 1], text.indexOf(w) + w.length);
+        const gap = text.substring(text.indexOf(w) + w.length, pos);
+        if (gap.includes('\n')) weight += PAUSE_NEWLINE;
+      }
+      return weight;
+    });
+
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     const cumulative = [];
     let acc = 0;
-    for (const w of words) {
-      acc += w.length;
-      cumulative.push(acc / totalChars);
+    for (const w of weights) {
+      acc += w;
+      cumulative.push(acc / totalWeight);
     }
+
+    // Slight backward offset so highlighting trails speech rather than leads it
+    const LAG_OFFSET = 0.02;
 
     const tick = () => {
       const audio = audioRef.current;
@@ -71,7 +94,7 @@ export function usePageTTS(apiKey, bookId) {
         animFrameRef.current = requestAnimationFrame(tick);
         return;
       }
-      const progress = audio.currentTime / audio.duration;
+      const progress = Math.max(0, (audio.currentTime / audio.duration) - LAG_OFFSET);
       let idx = cumulative.findIndex((c) => c >= progress);
       if (idx === -1) idx = words.length - 1;
       setCurrentWordIndex(idx);
