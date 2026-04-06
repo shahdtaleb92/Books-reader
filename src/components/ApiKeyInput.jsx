@@ -37,7 +37,7 @@ export default function ApiKeyInput({ apiKey, ttsApiKey, onSave, onSaveTTS }) {
   return (
     <div className="api-key-section">
       <div className="api-key-header">
-        <label htmlFor="api-key">مفتاح Gemini API (لاستخراج النص)</label>
+        <label htmlFor="api-key">مفتاح Gemini API</label>
         {apiKey && ttsApiKey && (
           <button onClick={() => setCollapsed(true)} className="collapse-btn">
             اخفاء
@@ -61,8 +61,8 @@ export default function ApiKeyInput({ apiKey, ttsApiKey, onSave, onSaveTTS }) {
         </button>
       </div>
 
-      <label htmlFor="tts-api-key" style={{ marginTop: '1rem', display: 'block', fontWeight: 600, marginBottom: '0.5rem' }}>
-        مفتاح TTS API (للقراءة الصوتية)
+      <label htmlFor="tts-api-key" style={{ marginTop: '0.85rem', display: 'block', fontWeight: 600, marginBottom: '0.45rem', fontSize: '0.88rem' }}>
+        مفتاح TTS API
       </label>
       <div className="api-key-row">
         <input
@@ -81,7 +81,7 @@ export default function ApiKeyInput({ apiKey, ttsApiKey, onSave, onSaveTTS }) {
         </button>
       </div>
       <p className="api-key-hint">
-        يمكن استخدام نفس المفتاح لكليهما، أو مفتاح مختلف إذا كان TTS مفعّل على مشروع آخر
+        يمكن استخدام نفس المفتاح لكليهما
       </p>
     </div>
   );

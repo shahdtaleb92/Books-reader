@@ -24,8 +24,8 @@ function App() {
   return (
     <div className="app" dir="rtl" lang="ar">
       <header>
-        <h1>قارئ الكتب العربية</h1>
-        <p>استخراج النصوص العربية من PDF وقراءتها بصوت عالٍ</p>
+        <h1>قارئ الكتب</h1>
+        <p>استخرج النصوص واستمع إليها</p>
       </header>
 
       <main>

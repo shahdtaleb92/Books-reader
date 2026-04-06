@@ -1,4 +1,4 @@
-app = 'books-reader'
+app = "shahdalotaibi"
 primary_region = 'ord'
 
 [build]

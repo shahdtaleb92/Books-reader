@@ -19,6 +19,26 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   const { extractText, loading: ocrLoading } = useGeminiOCR(apiKey);
   const pageTTS = usePageTTS(ttsApiKey, bookId);
 
+  const totalPages = book?.source_type === 'pdf' ? pages.length : (book?.total_pages || 0);
+
+  // Auto page flip: when a page finishes reading, advance to next non-empty page
+  useEffect(() => {
+    pageTTS.onPageFinishedRef.current = (finishedPage) => {
+      const nextPage = pageTTS.findNextNonEmptyPage(finishedPage + 1);
+      if (nextPage >= 0 && nextPage < totalPages) {
+        setCurrentPage(nextPage);
+        // Auto-play the next page
+        const nextText = texts[nextPage];
+        if (nextText && nextText.trim()) {
+          pageTTS.playPage(nextPage, nextText);
+        }
+      }
+    };
+    return () => {
+      pageTTS.onPageFinishedRef.current = null;
+    };
+  }, [pageTTS, texts, totalPages]);
+
   // Load book data and texts
   useEffect(() => {
     let cancelled = false;
@@ -82,8 +102,6 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     };
   }, [currentPage, bookId]);
 
-  const totalPages = book?.source_type === 'pdf' ? pages.length : (book?.total_pages || 0);
-
   const handlePageChange = useCallback(
     async (pageIndex) => {
       pageTTS.stop();
@@ -113,6 +131,17 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     }
   }, [currentPage, texts, pageTTS]);
 
+  // Click-to-read-from: seek audio to clicked word position
+  const handleWordClick = useCallback(
+    (wordIndex) => {
+      const text = texts[currentPage];
+      if (text && pageTTS.playing) {
+        pageTTS.playFromPosition(wordIndex, text);
+      }
+    },
+    [currentPage, texts, pageTTS]
+  );
+
   const currentText = texts[currentPage] || '';
 
   if (loadingBook) {
@@ -139,25 +168,27 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         {book && <h2>{book.title}</h2>}
       </div>
 
-      {totalPages > 1 && (
-        <PageNavigator
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-          loading={ocrLoading}
-        />
-      )}
-
       <TextEditor
         text={currentText}
         onChange={handleTextChange}
         loading={ocrLoading}
         playing={pageTTS.playing}
         currentWordIndex={pageTTS.currentWordIndex}
+        onWordClick={handleWordClick}
       />
 
-      {ttsApiKey && currentText && (
-        <RealtimeTTS
+      <div className="reader-controls">
+        {totalPages > 1 && (
+          <PageNavigator
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            loading={ocrLoading}
+          />
+        )}
+
+        {ttsApiKey && currentText && (
+          <RealtimeTTS
           arabicVoices={pageTTS.arabicVoices}
           selectedVoice={pageTTS.selectedVoice}
           onVoiceChange={pageTTS.setSelectedVoice}
@@ -171,6 +202,7 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
           onPause={pageTTS.pause}
           onResume={pageTTS.resume}
           onStop={pageTTS.stop}
+          onSeekBy={pageTTS.seekBy}
           onClearAudio={pageTTS.clearPageAudio}
           isPageCached={pageTTS.isPageCached}
           isPageSaved={pageTTS.isPageSaved}
@@ -178,7 +210,8 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
           playbackRate={pageTTS.playbackRate}
           onPlaybackRateChange={pageTTS.setPlaybackRate}
         />
-      )}
+        )}
+      </div>
     </div>
   );
 }

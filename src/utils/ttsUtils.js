@@ -129,10 +129,24 @@ export async function generateAudioForText(apiKey, text, voiceName) {
   const chunks = splitTextIntoChunks(text);
   const allPcmBuffers = [];
 
+  // Track chunk boundaries: each chunk's PCM byte length and word range
+  const words = text.split(/\s+/).filter(Boolean);
+  const chunkMeta = [];
+  let wordOffset = 0;
+
   for (const chunk of chunks) {
     const audioBase64 = await synthesizeText(apiKey, chunk, voiceName);
     const pcmBuffer = base64ToArrayBuffer(audioBase64);
     allPcmBuffers.push(pcmBuffer);
+
+    const chunkWords = chunk.split(/\s+/).filter(Boolean);
+    chunkMeta.push({
+      pcmBytes: pcmBuffer.byteLength,
+      wordStart: wordOffset,
+      wordEnd: wordOffset + chunkWords.length - 1,
+      wordCount: chunkWords.length,
+    });
+    wordOffset += chunkWords.length;
   }
 
   const totalLength = allPcmBuffers.reduce((sum, buf) => sum + buf.byteLength, 0);
@@ -143,7 +157,25 @@ export async function generateAudioForText(apiKey, text, voiceName) {
     offset += buf.byteLength;
   }
 
+  // Build chunk timing from PCM byte lengths (24000 Hz, 16-bit mono = 48000 bytes/sec)
+  const bytesPerSecond = 24000 * 1 * (16 / 8);
+  let timeOffset = 0;
+  const chunkTimings = chunkMeta.map((cm) => {
+    const duration = cm.pcmBytes / bytesPerSecond;
+    const timing = {
+      startTime: timeOffset,
+      endTime: timeOffset + duration,
+      wordStart: cm.wordStart,
+      wordEnd: cm.wordEnd,
+      wordCount: cm.wordCount,
+    };
+    timeOffset += duration;
+    return timing;
+  });
+
   const wav = pcmToWav(combined.buffer, 24000, 1, 16);
   const blob = new Blob([wav], { type: 'audio/wav' });
-  return URL.createObjectURL(blob);
+  const audioUrl = URL.createObjectURL(blob);
+
+  return { audioUrl, chunkTimings };
 }
