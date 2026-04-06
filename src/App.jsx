@@ -21,14 +21,26 @@ function App() {
     setActiveBookId(null);
   }, []);
 
+  // Reader mode: full-screen immersive
+  if (apiKey && activeBookId) {
+    return (
+      <BookReader
+        bookId={activeBookId}
+        apiKey={apiKey}
+        ttsApiKey={ttsApiKey}
+        onBack={handleBackToLibrary}
+      />
+    );
+  }
+
+  // Library mode
   return (
-    <div className="app" dir="rtl" lang="ar">
-      <header>
-        <h1>قارئ الكتب</h1>
-        <p>استخرج النصوص واستمع إليها</p>
+    <div className="app-shell" dir="rtl" lang="ar">
+      <header className="app-header">
+        <h1>مكتبتي</h1>
       </header>
 
-      <main>
+      <main className="app-main">
         <ApiKeyInput
           apiKey={apiKey}
           ttsApiKey={ttsApiKey}
@@ -36,17 +48,8 @@ function App() {
           onSaveTTS={setTtsApiKey}
         />
 
-        {apiKey && !activeBookId && (
+        {apiKey && (
           <Library apiKey={apiKey} onOpenBook={handleOpenBook} />
-        )}
-
-        {apiKey && activeBookId && (
-          <BookReader
-            bookId={activeBookId}
-            apiKey={apiKey}
-            ttsApiKey={ttsApiKey}
-            onBack={handleBackToLibrary}
-          />
         )}
       </main>
     </div>

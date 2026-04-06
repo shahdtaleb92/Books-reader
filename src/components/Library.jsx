@@ -5,40 +5,28 @@ import { useGeminiOCR } from '../hooks/useGeminiOCR.js';
 
 const CONCURRENT_OCR = 3;
 
-const SourceIcon = ({ type }) => {
-  const icons = {
-    pdf: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="9" y1="15" x2="15" y2="15" />
-        <line x1="9" y1="11" x2="15" y2="11" />
-      </svg>
-    ),
-    text: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-      </svg>
-    ),
-    url: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="2" y1="12" x2="22" y2="12" />
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-      </svg>
-    ),
-    docx: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <path d="M9 13l2 4 2-4" />
-      </svg>
-    ),
-  };
-  return icons[type] || icons.text;
+// Book cover color palette
+const COVER_COLORS = [
+  ['#2D1B69', '#1a1145'],
+  ['#1B3A4B', '#0f2330'],
+  ['#4A1942', '#2d0f28'],
+  ['#1B4332', '#0f2a1f'],
+  ['#3D2B1F', '#261a13'],
+  ['#1E3A5F', '#122540'],
+  ['#5C2D2D', '#3b1c1c'],
+  ['#2D4A3E', '#1a2e26'],
+];
+
+function getCoverColor(id) {
+  const idx = typeof id === 'string'
+    ? id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+    : id;
+  return COVER_COLORS[idx % COVER_COLORS.length];
+}
+
+const SourceBadge = ({ type }) => {
+  const labels = { pdf: 'PDF', text: 'TXT', url: 'URL', docx: 'DOCX' };
+  return <span className="cover-badge">{labels[type] || 'TXT'}</span>;
 };
 
 export default function Library({ apiKey, onOpenBook }) {
@@ -60,24 +48,18 @@ export default function Library({ apiKey, onOpenBook }) {
     }
   }, []);
 
-  useEffect(() => {
-    loadBooks();
-  }, [loadBooks]);
+  useEffect(() => { loadBooks(); }, [loadBooks]);
 
-  // PDF upload with OCR
   const handlePdfUpload = async (file) => {
     setUploading(true);
     setError(null);
     try {
       setExtractionProgress({ stage: 'converting', current: 0, total: 0 });
       const images = await pdfToImages(file);
-
       const book = await uploadBook(file, images.length);
-
       setExtractionProgress({ stage: 'extracting', current: 0, total: images.length });
       const texts = {};
       let completed = 0;
-
       for (let batchStart = 0; batchStart < images.length; batchStart += CONCURRENT_OCR) {
         const batchEnd = Math.min(batchStart + CONCURRENT_OCR, images.length);
         const batch = [];
@@ -93,7 +75,6 @@ export default function Library({ apiKey, onOpenBook }) {
         }
         await Promise.all(batch);
       }
-
       setExtractionProgress({ stage: 'saving', current: 0, total: 0 });
       await saveExtractedTexts(book.id, texts, images.length);
       await loadBooks();
@@ -105,16 +86,13 @@ export default function Library({ apiKey, onOpenBook }) {
     }
   };
 
-  // File input handler (PDF, TXT, DOCX)
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     e.target.value = '';
-
     const ext = file.name.split('.').pop().toLowerCase();
 
     if (ext === 'txt' || file.type === 'text/plain') {
-      // Text file - read content and create text book
       setUploading(true);
       setError(null);
       try {
@@ -125,48 +103,31 @@ export default function Library({ apiKey, onOpenBook }) {
         });
         await createTextBook(file.name.replace(/\.txt$/i, ''), text);
         await loadBooks();
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setUploading(false);
-      }
+      } catch (e) { setError(e.message); }
+      finally { setUploading(false); }
     } else if (ext === 'docx') {
-      // DOCX - upload to server for mammoth processing
       setUploading(true);
       setError(null);
-      try {
-        await uploadBook(file);
-        await loadBooks();
-      } catch (e) {
-        setError(e.message);
-      } finally {
-        setUploading(false);
-      }
+      try { await uploadBook(file); await loadBooks(); }
+      catch (e) { setError(e.message); }
+      finally { setUploading(false); }
     } else if (file.type === 'application/pdf') {
       await handlePdfUpload(file);
     }
   };
 
-  // Paste from clipboard
   const handlePaste = async () => {
     setError(null);
     try {
       const text = await navigator.clipboard.readText();
-      if (!text || !text.trim()) {
-        setError('الحافظة فارغة');
-        return;
-      }
+      if (!text || !text.trim()) { setError('الحافظة فارغة'); return; }
       setUploading(true);
       await createTextBook('نص ملصوق - ' + new Date().toLocaleDateString('ar-EG'), text);
       await loadBooks();
-    } catch (e) {
-      setError('تعذر القراءة من الحافظة: ' + e.message);
-    } finally {
-      setUploading(false);
-    }
+    } catch (e) { setError('تعذر القراءة من الحافظة: ' + e.message); }
+    finally { setUploading(false); }
   };
 
-  // URL article extraction
   const handleUrlSubmit = async () => {
     if (!urlInput.trim()) return;
     setLoadingUrl(true);
@@ -175,11 +136,8 @@ export default function Library({ apiKey, onOpenBook }) {
       await createBookFromUrl(urlInput.trim());
       setUrlInput('');
       await loadBooks();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoadingUrl(false);
-    }
+    } catch (e) { setError(e.message); }
+    finally { setLoadingUrl(false); }
   };
 
   const handleDelete = async (id) => {
@@ -187,9 +145,7 @@ export default function Library({ apiKey, onOpenBook }) {
     try {
       await deleteBook(id);
       setBooks((prev) => prev.filter((b) => b.id !== id));
-    } catch (e) {
-      setError(e.message);
-    }
+    } catch (e) { setError(e.message); }
   };
 
   const filteredBooks = search
@@ -198,14 +154,15 @@ export default function Library({ apiKey, onOpenBook }) {
 
   return (
     <div className="library">
-      <div className="library-header">
-        <h2>المكتبة</h2>
-      </div>
-
-      {/* Add content sources */}
+      {/* Add sources */}
       <div className="add-sources">
         <div className="source-row">
           <label className="upload-btn" htmlFor="library-upload">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
             {uploading ? 'جاري الرفع...' : 'رفع ملف'}
           </label>
           <input
@@ -217,6 +174,10 @@ export default function Library({ apiKey, onOpenBook }) {
             style={{ display: 'none' }}
           />
           <button onClick={handlePaste} disabled={uploading} className="paste-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+            </svg>
             لصق نص
           </button>
         </div>
@@ -232,7 +193,7 @@ export default function Library({ apiKey, onOpenBook }) {
             onKeyDown={(e) => e.key === 'Enter' && handleUrlSubmit()}
           />
           <button onClick={handleUrlSubmit} disabled={loadingUrl || !urlInput.trim()}>
-            {loadingUrl ? 'جاري...' : 'جلب'}
+            {loadingUrl ? '...' : 'جلب'}
           </button>
         </div>
       </div>
@@ -241,21 +202,12 @@ export default function Library({ apiKey, onOpenBook }) {
 
       {extractionProgress && (
         <div className="extraction-progress">
-          {extractionProgress.stage === 'converting' && (
-            <span>جاري تحويل الصفحات...</span>
-          )}
+          {extractionProgress.stage === 'converting' && <span>جاري تحويل الصفحات...</span>}
           {extractionProgress.stage === 'extracting' && (
             <>
-              <span>
-                استخراج النص: {extractionProgress.current}/{extractionProgress.total}
-              </span>
+              <span>استخراج النص: {extractionProgress.current}/{extractionProgress.total}</span>
               <div className="ocr-progress-bar-container">
-                <div
-                  className="ocr-progress-bar"
-                  style={{
-                    width: `${(extractionProgress.current / extractionProgress.total) * 100}%`,
-                  }}
-                />
+                <div className="ocr-progress-bar" style={{ width: `${(extractionProgress.current / extractionProgress.total) * 100}%` }} />
               </div>
             </>
           )}
@@ -264,8 +216,12 @@ export default function Library({ apiKey, onOpenBook }) {
       )}
 
       {/* Search */}
-      {books.length > 0 && (
+      {books.length > 3 && (
         <div className="library-search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
           <input
             type="text"
             value={search}
@@ -278,37 +234,42 @@ export default function Library({ apiKey, onOpenBook }) {
 
       {books.length === 0 && !uploading && (
         <div className="library-empty">
-          <p>لا توجد كتب بعد</p>
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" opacity="0.3">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+          </svg>
+          <p>ارفع ملف أو الصق نص للبدء</p>
         </div>
       )}
 
+      {/* Book grid */}
       <div className="book-grid">
-        {filteredBooks.map((book) => (
-          <div key={book.id} className="book-card" onClick={() => onOpenBook(book.id)}>
-            <div className="book-icon"><SourceIcon type={book.source_type} /></div>
-            <div className="book-info">
-              <h3>{book.title}</h3>
-              <p>
-                {book.total_pages} صفحة
-                <span className="book-date"> · {new Date(book.created_at).toLocaleDateString('ar-EG')}</span>
-              </p>
+        {filteredBooks.map((book) => {
+          const [bg, bgDark] = getCoverColor(book.id);
+          return (
+            <div key={book.id} className="book-card" onClick={() => onOpenBook(book.id)}>
+              <div className="book-cover" style={{ background: `linear-gradient(145deg, ${bg}, ${bgDark})` }}>
+                <SourceBadge type={book.source_type} />
+                <div className="cover-title">{book.title}</div>
+                <div className="cover-pages">{book.total_pages} صفحة</div>
+              </div>
+              <div className="book-meta">
+                <span className="book-meta-title">{book.title}</span>
+                <span className="book-meta-date">{new Date(book.created_at).toLocaleDateString('ar-EG')}</span>
+              </div>
+              <button
+                className="delete-btn"
+                onClick={(e) => { e.stopPropagation(); handleDelete(book.id); }}
+                aria-label="حذف الكتاب"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
             </div>
-            <button
-              className="delete-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(book.id);
-              }}
-              title="حذف"
-              aria-label="حذف الكتاب"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
