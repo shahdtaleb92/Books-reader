@@ -71,12 +71,19 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     return () => { cancelled = true; };
   }, [bookId]);
 
-  // Prefetch TTS
+  // Always keep texts ref updated (needed for auto page flip)
   useEffect(() => {
-    if (ttsApiKey && Object.keys(texts).length > 0) {
+    if (Object.keys(texts).length > 0) {
+      pageTTS.updateTexts(texts);
+    }
+  }, [texts]);
+
+  // Only prefetch TTS audio when actively playing - don't waste API quota on navigation
+  useEffect(() => {
+    if (ttsApiKey && pageTTS.playing && Object.keys(texts).length > 0) {
       pageTTS.prefetchPages(currentPage, texts);
     }
-  }, [currentPage, texts, ttsApiKey]);
+  }, [currentPage, texts, ttsApiKey, pageTTS.playing]);
 
   // Auto-read
   useEffect(() => {

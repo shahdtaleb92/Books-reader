@@ -319,20 +319,25 @@ export function usePageTTS(apiKey, bookId) {
     [startWordTracking, buildWordWeights]
   );
 
+  // Store texts for auto page flip (doesn't call API)
+  const updateTexts = useCallback((texts) => {
+    textsRef.current = texts;
+    const maxPage = Math.max(...Object.keys(texts).map(Number), 0);
+    totalPagesRef.current = maxPage + 1;
+  }, []);
+
+  // Only pre-generate audio for nearby pages (called during active playback only)
   const prefetchPages = useCallback(
     (currentPage, texts) => {
-      textsRef.current = texts;
-      const maxPage = Math.max(...Object.keys(texts).map(Number), 0);
-      totalPagesRef.current = maxPage + 1;
-
-      const pagesToFetch = [currentPage - 1, currentPage, currentPage + 1];
+      updateTexts(texts);
+      const pagesToFetch = [currentPage + 1, currentPage + 2];
       for (const p of pagesToFetch) {
-        if (p >= 0 && texts[p] && !audioCacheRef.current.has(p)) {
+        if (p >= 0 && texts[p] && texts[p].trim() && !audioCacheRef.current.has(p)) {
           generatePageAudio(p, texts[p]);
         }
       }
     },
-    [generatePageAudio]
+    [generatePageAudio, updateTexts]
   );
 
   const pause = useCallback(() => {
@@ -431,6 +436,7 @@ export function usePageTTS(apiKey, bookId) {
     stop,
     seekBy,
     prefetchPages,
+    updateTexts,
     isPageCached,
     isPageSaved,
     clearPageAudio,
