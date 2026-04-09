@@ -10,10 +10,24 @@ if (!existsSync(DATA_DIR)) {
   mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const db = new Database(join(DATA_DIR, 'books.db'));
+const dbPath = join(DATA_DIR, 'books.db');
 
-// Enable WAL mode for better concurrent read performance
-db.pragma('journal_mode = WAL');
+// On Fly.io, remove WAL/SHM files that cause SQLITE_IOERR_SHMSIZE
+if (process.env.FLY_APP_NAME) {
+  const { unlinkSync } = await import('fs');
+  for (const ext of ['-wal', '-shm']) {
+    try { unlinkSync(dbPath + ext); } catch { /* ignore */ }
+  }
+}
+
+const db = new Database(dbPath);
+
+// WAL mode doesn't work on Fly.io mounted volumes - use DELETE mode there
+if (process.env.FLY_APP_NAME) {
+  db.pragma('journal_mode = DELETE');
+} else {
+  db.pragma('journal_mode = WAL');
+}
 db.pragma('foreign_keys = ON');
 
 db.exec(`
