@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -12,23 +12,42 @@ if (!existsSync(DATA_DIR)) {
 
 const dbPath = join(DATA_DIR, 'books.db');
 
-// On Fly.io, remove WAL/SHM files that cause SQLITE_IOERR_SHMSIZE
-if (process.env.FLY_APP_NAME) {
-  const { unlinkSync } = await import('fs');
-  for (const ext of ['-wal', '-shm']) {
-    try { unlinkSync(dbPath + ext); } catch { /* ignore */ }
+// Clean up WAL/SHM files that cause issues on Fly.io
+for (const ext of ['-wal', '-shm']) {
+  try { unlinkSync(dbPath + ext); } catch { /* ignore */ }
+}
+
+function openDatabase() {
+  try {
+    const db = new Database(dbPath);
+    // Test if DB is usable
+    db.pragma('foreign_keys = ON');
+    if (process.env.FLY_APP_NAME) {
+      db.pragma('journal_mode = DELETE');
+    } else {
+      db.pragma('journal_mode = WAL');
+    }
+    // Quick integrity check
+    db.prepare('SELECT 1').get();
+    return db;
+  } catch (e) {
+    console.error('Database corrupt or unusable, recreating:', e.message);
+    // Delete corrupt database and start fresh
+    try { unlinkSync(dbPath); } catch { /* ignore */ }
+    try { unlinkSync(dbPath + '-wal'); } catch { /* ignore */ }
+    try { unlinkSync(dbPath + '-shm'); } catch { /* ignore */ }
+    const db = new Database(dbPath);
+    db.pragma('foreign_keys = ON');
+    if (process.env.FLY_APP_NAME) {
+      db.pragma('journal_mode = DELETE');
+    } else {
+      db.pragma('journal_mode = WAL');
+    }
+    return db;
   }
 }
 
-const db = new Database(dbPath);
-
-// WAL mode doesn't work on Fly.io mounted volumes - use DELETE mode there
-if (process.env.FLY_APP_NAME) {
-  db.pragma('journal_mode = DELETE');
-} else {
-  db.pragma('journal_mode = WAL');
-}
-db.pragma('foreign_keys = ON');
+const db = openDatabase();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS books (
@@ -63,12 +82,14 @@ db.exec(`
 `);
 
 // Migrations for existing databases
-const columns = db.prepare("PRAGMA table_info(books)").all().map(c => c.name);
-if (!columns.includes('source_type')) {
-  db.exec("ALTER TABLE books ADD COLUMN source_type TEXT NOT NULL DEFAULT 'pdf'");
-}
-if (!columns.includes('last_page')) {
-  db.exec("ALTER TABLE books ADD COLUMN last_page INTEGER DEFAULT 0");
-}
+try {
+  const columns = db.prepare("PRAGMA table_info(books)").all().map(c => c.name);
+  if (!columns.includes('source_type')) {
+    db.exec("ALTER TABLE books ADD COLUMN source_type TEXT NOT NULL DEFAULT 'pdf'");
+  }
+  if (!columns.includes('last_page')) {
+    db.exec("ALTER TABLE books ADD COLUMN last_page INTEGER DEFAULT 0");
+  }
+} catch { /* fresh database, no migrations needed */ }
 
 export default db;
