@@ -721,8 +721,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   font-weight: 600;
 }
 
-/* Tap zones */
+/* Tap zones (disabled - conflicts with word click) */
 .tap-zone {
+  display: none;
   position: absolute;
   top: 3rem;
   bottom: 6.5rem;
@@ -781,6 +782,38 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .nav-btn:hover:not(:disabled) {
   background: rgba(255,255,255,0.12);
   color: var(--text);
+}
+
+.page-input-area {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.page-input {
+  width: 50px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: var(--font-ui);
+  text-align: center;
+  min-height: 36px;
+  -moz-appearance: textfield;
+}
+
+.page-input::-webkit-outer-spin-button,
+.page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.page-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .page-slider-area {

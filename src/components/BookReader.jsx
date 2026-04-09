@@ -145,23 +145,11 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   }, [currentPage, texts, pageTTS]);
 
   const handlePageTap = useCallback((e) => {
-    // Don't handle taps on buttons/controls/textarea
+    // Don't flip pages on tap - only toggle controls
+    // This prevents conflicts with word clicking for TTS positioning
     if (e.target.closest('.reader-top-bar, .reader-bottom-bar, .tts-panel, textarea, button, select, input, .word, .word-active')) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const width = rect.width;
-
-    // RTL: right side = previous, left side = next
-    if (x < width * 0.25) {
-      handlePageChange(currentPage + 1);
-    } else if (x > width * 0.75) {
-      handlePageChange(currentPage - 1);
-    } else {
-      // Center tap: toggle controls
-      resetControlsTimer();
-    }
-  }, [currentPage, handlePageChange, resetControlsTimer]);
+    resetControlsTimer();
+  }, [resetControlsTimer]);
 
   const currentText = texts[currentPage] || '';
 
@@ -316,14 +304,12 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         </div>
       </div>
 
-      {/* Tap zones indicators */}
-      <div className="tap-zone tap-zone-prev" />
-      <div className="tap-zone tap-zone-next" />
 
       {/* Bottom bar */}
       <div className={`reader-bottom-bar ${showControls ? 'visible' : ''}`}>
         {/* Page navigation */}
         <div className="bottom-nav">
+          {/* RTL: right arrow (→) = next page (forward in reading), left arrow (←) = previous */}
           <button
             onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage >= totalPages - 1 || ocrLoading}
@@ -331,21 +317,24 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
             aria-label="الصفحة التالية"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
+              <path d="M9 18l6-6-6-6" />
             </svg>
           </button>
 
-          <div className="page-slider-area">
+          <div className="page-input-area">
             <input
-              type="range"
-              min="0"
-              max={Math.max(totalPages - 1, 0)}
-              value={currentPage}
-              onChange={(e) => handlePageChange(parseInt(e.target.value))}
-              className="page-slider"
-              dir="rtl"
+              type="number"
+              min="1"
+              max={totalPages}
+              value={currentPage + 1}
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                if (val >= 1 && val <= totalPages) handlePageChange(val - 1);
+              }}
+              className="page-input"
+              dir="ltr"
             />
-            <span className="page-label">صفحة {currentPage + 1} من {totalPages}</span>
+            <span className="page-label">/ {totalPages}</span>
           </div>
 
           <button
@@ -355,7 +344,7 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
             aria-label="الصفحة السابقة"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 18l6-6-6-6" />
+              <path d="M15 18l-6-6 6-6" />
             </svg>
           </button>
         </div>
@@ -399,16 +388,17 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
 
               {(pageTTS.playing || pageTTS.paused) && (
                 <>
-                  <button onClick={() => pageTTS.seekBy(-10)} className="tts-seek-btn" aria-label="رجوع">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1 4v6h6" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    </svg>
-                  </button>
+                  {/* RTL: forward (seek ahead) on right, backward (seek back) on left */}
                   <button onClick={() => pageTTS.seekBy(10)} className="tts-seek-btn" aria-label="تقديم">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M23 4v6h-6" />
                       <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                  </button>
+                  <button onClick={() => pageTTS.seekBy(-10)} className="tts-seek-btn" aria-label="رجوع">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 4v6h6" />
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                     </svg>
                   </button>
                 </>

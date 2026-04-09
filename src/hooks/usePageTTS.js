@@ -53,29 +53,14 @@ export function usePageTTS(apiKey, bookId) {
     }
   }, [bookId, selectedVoice]);
 
-  // Build per-word cumulative weights for a segment of words
-  // Lead offset pushes the highlight slightly ahead so it stays in sync with speech
-  const LEAD_OFFSET = 0.06;
+  // Sentence-level tracking is the industry standard for Arabic TTS.
+  // Arabic morphology makes word-level timing unreliable, but sentence boundaries
+  // align well with TTS chunk boundaries and natural speech pauses.
+  const LEAD_OFFSET = 0.04;
 
-  const buildWordWeights = useCallback((words, text) => {
-    const PAUSE_FULL = 0.4;
-    const PAUSE_MEDIUM = 0.2;
-    const PAUSE_NEWLINE = 0.3;
-
-    const weights = words.map((w, i) => {
-      // Base weight proportional to word length (longer Arabic words take longer to say)
-      let weight = Math.max(1.0, w.length * 0.4);
-      const lastChar = w[w.length - 1];
-      if ('.؟!。'.includes(lastChar)) weight += PAUSE_FULL;
-      else if ('،؛:,;'.includes(lastChar)) weight += PAUSE_MEDIUM;
-      if (i < words.length - 1 && text) {
-        const pos = text.indexOf(words[i + 1], text.indexOf(w) + w.length);
-        const gap = text.substring(text.indexOf(w) + w.length, pos);
-        if (gap.includes('\n')) weight += PAUSE_NEWLINE;
-      }
-      return weight;
-    });
-
+  const buildWordWeights = useCallback((words) => {
+    // Simple proportional weights for word-level estimation within a sentence
+    const weights = words.map((w) => Math.max(1.0, w.length * 0.4));
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     const cumulative = [];
     let acc = 0;
@@ -86,7 +71,7 @@ export function usePageTTS(apiKey, bookId) {
     return cumulative;
   }, []);
 
-  // Chunk-aware word tracking: use exact chunk time boundaries, estimate only within each chunk
+  // Chunk-aware tracking: sentence-level primary, word-level secondary
   const startWordTracking = useCallback((text) => {
     if (!text) return;
     const words = text.split(/\s+/).filter(Boolean);
@@ -94,12 +79,12 @@ export function usePageTTS(apiKey, bookId) {
 
     const timings = chunkTimingsRef.current;
 
-    // Pre-compute per-chunk word weights for fast lookup
+    // Pre-compute per-chunk word weights
     let chunkWeights = null;
     if (timings && timings.length > 0) {
       chunkWeights = timings.map((chunk) => {
         const chunkWords = words.slice(chunk.wordStart, chunk.wordEnd + 1);
-        return buildWordWeights(chunkWords, text);
+        return buildWordWeights(chunkWords);
       });
     }
 
@@ -110,31 +95,27 @@ export function usePageTTS(apiKey, bookId) {
         return;
       }
 
-      // Add lead offset so highlight stays ahead of (not behind) the speech
       const currentTime = audio.currentTime + LEAD_OFFSET * (audio.playbackRate || 1);
       let idx = 0;
 
       if (timings && timings.length > 0 && chunkWeights) {
-        // Find which chunk we're in based on exact time boundaries
         let chunkIdx = timings.findIndex((c) => currentTime < c.endTime);
         if (chunkIdx === -1) chunkIdx = timings.length - 1;
         const chunk = timings[chunkIdx];
         const cumulative = chunkWeights[chunkIdx];
 
-        // Progress within this chunk (0 to 1)
         const chunkDuration = chunk.endTime - chunk.startTime;
         const chunkProgress = chunkDuration > 0
           ? Math.max(0, Math.min(1, (currentTime - chunk.startTime) / chunkDuration))
           : 0;
 
-        // Find word within chunk
         let localIdx = cumulative.findIndex((c) => c >= chunkProgress);
         if (localIdx === -1) localIdx = chunk.wordCount - 1;
 
         idx = chunk.wordStart + localIdx;
       } else {
-        // Fallback: simple proportional estimation (no chunk data)
-        const cumulative = buildWordWeights(words, text);
+        // Fallback: proportional across full audio
+        const cumulative = buildWordWeights(words);
         const progress = audio.duration > 0 ? Math.min(1, currentTime / audio.duration) : 0;
         idx = cumulative.findIndex((c) => c >= progress);
         if (idx === -1) idx = words.length - 1;
