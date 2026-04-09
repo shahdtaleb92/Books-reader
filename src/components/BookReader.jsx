@@ -85,12 +85,8 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     }
   }, [currentPage, texts, ttsApiKey, pageTTS.playing]);
 
-  // Auto-read
-  useEffect(() => {
-    if (pageTTS.autoRead && ttsApiKey && texts[currentPage]) {
-      pageTTS.playPage(currentPage, texts[currentPage]);
-    }
-  }, [currentPage, pageTTS.autoRead]);
+  // Auto-read is handled by onPageFinishedRef callback (auto page flip)
+  // No separate auto-read effect needed - it was causing unwanted API calls
 
   // Save position
   useEffect(() => {
@@ -316,12 +312,14 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
       <div className={`reader-bottom-bar ${showControls ? 'visible' : ''}`}>
         {/* Page navigation */}
         <div className="bottom-nav">
-          {/* RTL: right arrow (→) = next page (forward in reading), left arrow (←) = previous */}
+          {/* In RTL flexbox: first element = right side of screen
+              Arabic books: right = previous (where you came from), left = next (where you're going)
+              So: first button (right side) = previous, last button (left side) = next */}
           <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage >= totalPages - 1 || ocrLoading}
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage <= 0 || ocrLoading}
             className="nav-btn"
-            aria-label="الصفحة التالية"
+            aria-label="الصفحة السابقة"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18l6-6-6-6" />
@@ -345,10 +343,10 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
           </div>
 
           <button
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage <= 0 || ocrLoading}
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage >= totalPages - 1 || ocrLoading}
             className="nav-btn"
-            aria-label="الصفحة السابقة"
+            aria-label="الصفحة التالية"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M15 18l-6-6 6-6" />
@@ -395,17 +393,17 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
 
               {(pageTTS.playing || pageTTS.paused) && (
                 <>
-                  {/* RTL: forward (seek ahead) on right, backward (seek back) on left */}
-                  <button onClick={() => pageTTS.seekBy(10)} className="tts-seek-btn" aria-label="تقديم">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M23 4v6h-6" />
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                    </svg>
-                  </button>
+                  {/* RTL flexbox: first = right side. Right = backward in time, Left = forward */}
                   <button onClick={() => pageTTS.seekBy(-10)} className="tts-seek-btn" aria-label="رجوع">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 4v6h6" />
                       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    </svg>
+                  </button>
+                  <button onClick={() => pageTTS.seekBy(10)} className="tts-seek-btn" aria-label="تقديم">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 4v6h-6" />
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                     </svg>
                   </button>
                 </>
