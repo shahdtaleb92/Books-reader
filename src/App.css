@@ -7,39 +7,39 @@
 
 :root {
   /* Background */
-  --bg: #111114;
-  --bg-warm: #16161A;
-  --bg-surface: #1C1C22;
-  --bg-elevated: #222228;
-  --bg-hover: #28282F;
+  --bg: #F5F3EF;
+  --bg-warm: #EDE9E3;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #F0ECE6;
 
   /* Page (paper) */
-  --page-bg: #F8F5F0;
-  --page-bg-dark: #EDE8E0;
+  --page-bg: #FFFDF9;
+  --page-bg-dark: #F5F0E8;
   --page-text: #2C2420;
   --page-text-muted: #8A7E74;
-  --page-border: #D8D0C4;
+  --page-border: #E0D8CC;
 
   /* Accent */
-  --accent: #C8944A;
-  --accent-soft: rgba(200, 148, 74, 0.12);
-  --accent-medium: rgba(200, 148, 74, 0.25);
-  --accent-hover: #D8A45A;
-  --accent-glow: rgba(200, 148, 74, 0.15);
+  --accent: #B07830;
+  --accent-soft: rgba(176, 120, 48, 0.10);
+  --accent-medium: rgba(176, 120, 48, 0.20);
+  --accent-hover: #C88A40;
+  --accent-glow: rgba(176, 120, 48, 0.08);
 
   /* UI text */
-  --text: #E8E4DE;
-  --text-secondary: #9A948C;
-  --text-muted: #5E5850;
+  --text: #2C2420;
+  --text-secondary: #6B6158;
+  --text-muted: #A09888;
 
   /* Borders */
-  --border: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(255, 255, 255, 0.12);
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
 
   /* Status */
-  --error: #E85C5C;
-  --error-soft: rgba(232, 92, 92, 0.1);
-  --error-border: rgba(232, 92, 92, 0.2);
+  --error: #D04040;
+  --error-soft: rgba(208, 64, 64, 0.08);
+  --error-border: rgba(208, 64, 64, 0.2);
 
   /* Typography */
   --font-ui: 'Tajawal', 'Noto Sans Arabic', system-ui, sans-serif;
