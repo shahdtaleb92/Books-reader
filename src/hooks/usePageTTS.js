@@ -53,15 +53,16 @@ export function usePageTTS(apiKey, bookId) {
     }
   }, [bookId, selectedVoice]);
 
-  // Sentence-level tracking is the industry standard for Arabic TTS.
-  // Arabic morphology makes word-level timing unreliable, but sentence boundaries
-  // align well with TTS chunk boundaries and natural speech pauses.
-  const LEAD_OFFSET = 0.04;
+  // Lead offset compensates for the highlight lagging behind speech.
+  // Arabic TTS speaks faster than proportional estimation predicts.
+  const LEAD_OFFSET = 0.15;
 
   const buildWordWeights = useCallback((words) => {
-    // Simple proportional weights for word-level estimation within a sentence
-    const weights = words.map((w) => Math.max(1.0, w.length * 0.4));
-    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    // Arabic TTS gives roughly equal time per word regardless of length.
+    // Short function words (في، من، على) get almost the same time as longer words.
+    // Using flat weights (1.0 per word) instead of length-based is more accurate.
+    const weights = words.map(() => 1.0);
+    const totalWeight = weights.length;
     const cumulative = [];
     let acc = 0;
     for (const w of weights) {
