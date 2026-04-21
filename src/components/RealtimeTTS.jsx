@@ -12,6 +12,8 @@ export default function RealtimeTTS({
   isPageSaved,
   playbackRate,
   onPlaybackRateChange,
+  highlightOffset,
+  onHighlightOffsetChange,
 }) {
   const cached = isPageCached(currentPage);
   const saved = isPageSaved(currentPage);
@@ -39,7 +41,7 @@ export default function RealtimeTTS({
         </div>
 
         <div className="speed-control">
-          <label htmlFor="rt-speed">{playbackRate}x</label>
+          <label htmlFor="rt-speed">السرعة {playbackRate}x</label>
           <input
             id="rt-speed"
             type="range"
@@ -48,6 +50,19 @@ export default function RealtimeTTS({
             step="0.25"
             value={playbackRate}
             onChange={(e) => onPlaybackRateChange(parseFloat(e.target.value))}
+          />
+        </div>
+
+        <div className="speed-control">
+          <label htmlFor="rt-highlight">تزامن التظليل {Math.round(highlightOffset * 1000)}ms</label>
+          <input
+            id="rt-highlight"
+            type="range"
+            min="-0.3"
+            max="0.5"
+            step="0.05"
+            value={highlightOffset}
+            onChange={(e) => onHighlightOffsetChange(parseFloat(e.target.value))}
           />
         </div>
       </div>

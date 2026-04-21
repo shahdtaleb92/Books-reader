@@ -474,6 +474,8 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
                   error={pageTTS.error}
                   playbackRate={pageTTS.playbackRate}
                   onPlaybackRateChange={pageTTS.setPlaybackRate}
+                  highlightOffset={pageTTS.highlightOffset}
+                  onHighlightOffsetChange={pageTTS.setHighlightOffset}
                 />
               </div>
             )}

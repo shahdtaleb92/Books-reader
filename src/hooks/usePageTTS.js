@@ -54,9 +54,13 @@ export function usePageTTS(apiKey, bookId) {
     }
   }, [bookId, selectedVoice]);
 
-  // Lead offset compensates for the highlight lagging behind speech.
-  // Arabic TTS speaks faster than proportional estimation predicts.
-  const LEAD_OFFSET = 0.15;
+  const [highlightOffset, setHighlightOffset] = useState(() => {
+    return parseFloat(localStorage.getItem('tts_highlight_offset') || '0.15');
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tts_highlight_offset', String(highlightOffset));
+  }, [highlightOffset]);
 
   const buildWordWeights = useCallback((words) => {
     // Arabic TTS gives roughly equal time per word regardless of length.
@@ -97,7 +101,7 @@ export function usePageTTS(apiKey, bookId) {
         return;
       }
 
-      const currentTime = audio.currentTime + LEAD_OFFSET * (audio.playbackRate || 1);
+      const currentTime = audio.currentTime + highlightOffset * (audio.playbackRate || 1);
       let idx = 0;
 
       if (timings && timings.length > 0 && chunkWeights) {
@@ -128,7 +132,7 @@ export function usePageTTS(apiKey, bookId) {
     };
 
     animFrameRef.current = requestAnimationFrame(tick);
-  }, [buildWordWeights]);
+  }, [buildWordWeights, highlightOffset]);
 
   const stopWordTracking = useCallback(() => {
     if (animFrameRef.current) {
@@ -462,6 +466,8 @@ export function usePageTTS(apiKey, bookId) {
     clearPageAudio,
     playbackRate,
     setPlaybackRate,
+    highlightOffset,
+    setHighlightOffset,
     onPageFinishedRef,
     findNextNonEmptyPage,
   };
