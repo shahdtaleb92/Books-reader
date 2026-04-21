@@ -3,6 +3,7 @@ import { fetchBook, fetchPageTexts, savePageText, getBookPdfUrl, saveReadingPosi
 import { pdfToImages } from '../utils/pdfToImages.js';
 import { useGeminiOCR } from '../hooks/useGeminiOCR.js';
 import { usePageTTS } from '../hooks/usePageTTS.js';
+import { cacheAllTexts, getCachedTexts } from '../utils/offlineCache.js';
 import RealtimeTTS from './RealtimeTTS.jsx';
 
 export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
@@ -39,28 +40,48 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     return () => { pageTTS.onPageFinishedRef.current = null; };
   }, [pageTTS, texts, totalPages]);
 
-  // Load book
+  // Load book - try server first, fall back to IndexedDB for offline
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setLoadingBook(true);
-        const [bookData, pageTexts] = await Promise.all([
-          fetchBook(bookId),
-          fetchPageTexts(bookId),
-        ]);
+        let bookData, pageTexts;
+
+        try {
+          [bookData, pageTexts] = await Promise.all([
+            fetchBook(bookId),
+            fetchPageTexts(bookId),
+          ]);
+          // Cache texts to IndexedDB for offline use
+          if (Object.keys(pageTexts).length > 0) {
+            cacheAllTexts(bookId, pageTexts);
+          }
+        } catch {
+          // Offline - try IndexedDB cache
+          const cachedTexts = await getCachedTexts(bookId, 999);
+          if (cachedTexts) {
+            pageTexts = cachedTexts;
+            bookData = { id: bookId, title: 'كتاب (غير متصل)', source_type: 'text', total_pages: Object.keys(cachedTexts).length, last_page: 0 };
+          } else {
+            throw new Error('لا يوجد اتصال بالإنترنت ولا نسخة محفوظة');
+          }
+        }
+
         if (cancelled) return;
         setBook(bookData);
         setTexts(pageTexts);
         if (bookData.last_page > 0) setCurrentPage(bookData.last_page);
 
         if (bookData.source_type === 'pdf') {
-          const pdfUrl = getBookPdfUrl(bookId);
-          const res = await fetch(pdfUrl);
-          const blob = await res.blob();
-          const file = new File([blob], bookData.filename, { type: 'application/pdf' });
-          const images = await pdfToImages(file);
-          if (!cancelled) setPages(images);
+          try {
+            const pdfUrl = getBookPdfUrl(bookId);
+            const res = await fetch(pdfUrl);
+            const blob = await res.blob();
+            const file = new File([blob], bookData.filename, { type: 'application/pdf' });
+            const images = await pdfToImages(file);
+            if (!cancelled) setPages(images);
+          } catch { /* PDF images not available offline - text still works */ }
         }
       } catch (e) {
         if (!cancelled) setError(e.message);

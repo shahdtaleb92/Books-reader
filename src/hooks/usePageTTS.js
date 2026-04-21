@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ARABIC_VOICES, generateAudioForText } from '../utils/ttsUtils.js';
 import { fetchPageAudio, savePageAudio, fetchSavedAudioPages, deletePageAudio } from '../utils/api.js';
+import { cacheAudio, getCachedAudio, deleteCachedAudio } from '../utils/offlineCache.js';
 
 export function usePageTTS(apiKey, bookId) {
   const [selectedVoice, setSelectedVoice] = useState(() => {
@@ -159,12 +160,12 @@ export function usePageTTS(apiKey, bookId) {
       setGenerating(true);
 
       try {
-        // Check server cache first
+        // 1. Check local IndexedDB cache first (works offline)
         if (bookId) {
-          const serverAudio = await fetchPageAudio(bookId, pageNum, selectedVoice.name);
-          if (serverAudio) {
-            // Server cache has no chunk timings — store without them
-            const cached = { audioUrl: serverAudio, chunkTimings: null };
+          const localBlob = await getCachedAudio(bookId, pageNum, selectedVoice.name);
+          if (localBlob) {
+            const audioUrl = URL.createObjectURL(localBlob);
+            const cached = { audioUrl, chunkTimings: null };
             audioCacheRef.current.set(pageNum, cached);
             generatingPagesRef.current.delete(pageNum);
             if (generatingPagesRef.current.size === 0) setGenerating(false);
@@ -172,17 +173,34 @@ export function usePageTTS(apiKey, bookId) {
           }
         }
 
-        // Generate fresh audio — returns { audioUrl, chunkTimings }
+        // 2. Check server cache
+        if (bookId) {
+          const serverAudio = await fetchPageAudio(bookId, pageNum, selectedVoice.name);
+          if (serverAudio) {
+            const cached = { audioUrl: serverAudio, chunkTimings: null };
+            audioCacheRef.current.set(pageNum, cached);
+            // Save to IndexedDB for offline use
+            fetch(serverAudio).then((r) => r.blob()).then((blob) => {
+              cacheAudio(bookId, pageNum, selectedVoice.name, blob);
+            }).catch(() => {});
+            generatingPagesRef.current.delete(pageNum);
+            if (generatingPagesRef.current.size === 0) setGenerating(false);
+            return cached;
+          }
+        }
+
+        // 3. Generate fresh audio
         const result = await generateAudioForText(apiKey, text, selectedVoice.name);
         if (result) {
           audioCacheRef.current.set(pageNum, result);
 
-          // Save to server in background
+          // Save to server + IndexedDB in background
           if (bookId) {
             fetch(result.audioUrl)
               .then((r) => r.blob())
               .then((blob) => {
                 savePageAudio(bookId, pageNum, selectedVoice.name, blob).catch(() => {});
+                cacheAudio(bookId, pageNum, selectedVoice.name, blob);
                 setSavedPages((prev) => new Set([...prev, pageNum]));
               })
               .catch(() => {});
@@ -388,6 +406,7 @@ export function usePageTTS(apiKey, bookId) {
       if (bookId) {
         try {
           await deletePageAudio(bookId, pageNum, selectedVoice.name);
+          deleteCachedAudio(bookId, pageNum, selectedVoice.name);
           setSavedPages((prev) => {
             const next = new Set(prev);
             next.delete(pageNum);
