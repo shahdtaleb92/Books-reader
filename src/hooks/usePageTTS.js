@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ARABIC_VOICES, generateAudioForText, reconstructChunkTimings } from '../utils/ttsUtils.js';
+import { ARABIC_VOICES, generateAudioForText, reconstructChunkTimings, getWordSpokenWeight } from '../utils/ttsUtils.js';
 import { fetchPageAudio, savePageAudio, fetchSavedAudioPages, deletePageAudio } from '../utils/api.js';
 import { cacheAudio, getCachedAudio, deleteCachedAudio } from '../utils/offlineCache.js';
 
@@ -63,11 +63,12 @@ export function usePageTTS(apiKey, bookId) {
   }, [highlightOffset]);
 
   const buildWordWeights = useCallback((words) => {
-    // Arabic TTS gives roughly equal time per word regardless of length.
-    // Short function words (في، من، على) get almost the same time as longer words.
-    // Using flat weights (1.0 per word) instead of length-based is more accurate.
-    const weights = words.map(() => 1.0);
-    const totalWeight = weights.length;
+    const weights = words.map((w) => getWordSpokenWeight(w));
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    if (totalWeight === 0) {
+      const flat = 1 / (words.length || 1);
+      return words.map((_, i) => (i + 1) * flat);
+    }
     const cumulative = [];
     let acc = 0;
     for (const w of weights) {

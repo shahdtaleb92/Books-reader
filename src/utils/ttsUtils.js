@@ -123,21 +123,35 @@ export async function synthesizeText(apiKey, text, voiceName) {
   return audioData;
 }
 
+const ARABIC_DIACRITICS_RE = /[ً-ٰٟۖ-ۭ]/g;
+const SENTENCE_END_RE = /[.؟!。\n]\s*$/;
+
+export function getWordSpokenWeight(word) {
+  const stripped = word.replace(ARABIC_DIACRITICS_RE, '').replace(/[^\p{L}\p{N}]/gu, '');
+  if (stripped.length === 0) return 0;
+  let weight = stripped.length;
+  if (SENTENCE_END_RE.test(word)) weight += 2;
+  return weight;
+}
+
 export function reconstructChunkTimings(text, totalDuration) {
   if (!text || !totalDuration || totalDuration <= 0) return null;
 
   const chunks = splitTextIntoChunks(text);
   if (chunks.length === 0) return null;
 
-  const words = text.split(/\s+/).filter(Boolean);
-  const encoder = new TextEncoder();
-  const chunkBytes = chunks.map((c) => encoder.encode(c).length);
-  const totalBytes = chunkBytes.reduce((sum, b) => sum + b, 0);
+  const chunkSpokenWeights = chunks.map((chunk) => {
+    const chunkWords = chunk.split(/\s+/).filter(Boolean);
+    return chunkWords.reduce((sum, w) => sum + getWordSpokenWeight(w), 0);
+  });
+  const totalSpokenWeight = chunkSpokenWeights.reduce((sum, w) => sum + w, 0);
 
   let timeOffset = 0;
   let wordOffset = 0;
   const timings = chunks.map((chunk, i) => {
-    const duration = totalBytes > 0 ? (chunkBytes[i] / totalBytes) * totalDuration : totalDuration / chunks.length;
+    const duration = totalSpokenWeight > 0
+      ? (chunkSpokenWeights[i] / totalSpokenWeight) * totalDuration
+      : totalDuration / chunks.length;
     const chunkWords = chunk.split(/\s+/).filter(Boolean);
     const timing = {
       startTime: timeOffset,
