@@ -4,6 +4,7 @@ import Library from './components/Library';
 import BookReader from './components/BookReader';
 import ErrorBoundary from './components/ErrorBoundary';
 import { cleanupOldAudio } from './utils/api.js';
+import { clearAllData } from './utils/offlineCache.js';
 import './App.css';
 
 function App() {
@@ -63,6 +64,18 @@ function App() {
         {apiKey && (
           <Library apiKey={apiKey} onOpenBook={handleOpenBook} />
         )}
+
+        <button
+          className="clear-all-data-btn"
+          onClick={async () => {
+            if (confirm('سيتم حذف جميع البيانات المحفوظة (المفاتيح، الإعدادات، الصوت المحفوظ). هل أنت متأكد؟')) {
+              await clearAllData();
+              window.location.reload();
+            }
+          }}
+        >
+          مسح جميع البيانات المحفوظة
+        </button>
       </main>
     </div>
   );

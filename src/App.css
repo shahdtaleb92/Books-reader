@@ -941,6 +941,22 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ========== Alerts ========== */
 
+.clear-all-data-btn {
+  display: block;
+  margin: 2rem auto 1rem;
+  background: transparent;
+  color: var(--error);
+  border: 1px solid var(--error-border);
+  font-size: 0.78rem;
+  padding: 0.5rem 1.2rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  font-family: inherit;
+}
+.clear-all-data-btn:hover {
+  background: var(--error-soft);
+}
+
 .error {
   background: var(--error-soft);
   color: var(--error);
