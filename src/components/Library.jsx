@@ -55,19 +55,38 @@ export default function Library({ apiKey, onOpenBook }) {
     setError(null);
     try {
       setExtractionProgress({ stage: 'converting', current: 0, total: 0 });
-      const images = await pdfToImages(file);
-      const book = await uploadBook(file, images.length);
+
+      let images;
+      try {
+        images = await pdfToImages(file);
+      } catch (e) {
+        throw new Error('فشل تحويل PDF: ' + (e.message || 'خطأ غير معروف'));
+      }
+
+      let book;
+      try {
+        book = await uploadBook(file, images.length);
+      } catch (e) {
+        throw new Error('فشل رفع الملف للخادم: ' + (e.message || 'خطأ غير معروف'));
+      }
+
       setExtractionProgress({ stage: 'extracting', current: 0, total: images.length });
       const texts = {};
       let completed = 0;
+      let ocrErrors = 0;
       for (let batchStart = 0; batchStart < images.length; batchStart += CONCURRENT_OCR) {
         const batchEnd = Math.min(batchStart + CONCURRENT_OCR, images.length);
         const batch = [];
         for (let i = batchStart; i < batchEnd; i++) {
           batch.push(
             (async () => {
-              const text = await extractText(images[i]);
-              texts[i] = text;
+              try {
+                const text = await extractText(images[i]);
+                texts[i] = text;
+              } catch {
+                ocrErrors++;
+                texts[i] = '';
+              }
               completed++;
               setExtractionProgress({ stage: 'extracting', current: completed, total: images.length });
             })()
@@ -77,12 +96,15 @@ export default function Library({ apiKey, onOpenBook }) {
       }
       setExtractionProgress({ stage: 'saving', current: 0, total: 0 });
       await saveExtractedTexts(book.id, texts, images.length);
-      await loadBooks();
+      if (ocrErrors > 0) {
+        setError(`تم رفع الكتاب مع ${ocrErrors} صفحة بدون نص (يمكنك إعادة الاستخراج لاحقاً)`);
+      }
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'خطأ غير معروف أثناء الرفع');
     } finally {
       setUploading(false);
       setExtractionProgress(null);
+      await loadBooks();
     }
   };
 
@@ -96,21 +118,21 @@ export default function Library({ apiKey, onOpenBook }) {
       setUploading(true);
       setError(null);
       try {
-        const text = await new Promise((resolve) => {
+        const text = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('فشل قراءة الملف'));
           reader.readAsText(file, 'utf-8');
         });
         await createTextBook(file.name.replace(/\.txt$/i, ''), text);
-        await loadBooks();
       } catch (e) { setError(e.message); }
-      finally { setUploading(false); }
+      finally { setUploading(false); await loadBooks(); }
     } else if (ext === 'docx') {
       setUploading(true);
       setError(null);
-      try { await uploadBook(file); await loadBooks(); }
+      try { await uploadBook(file); }
       catch (e) { setError(e.message); }
-      finally { setUploading(false); }
+      finally { setUploading(false); await loadBooks(); }
     } else if (ext === 'pdf' || file.type === 'application/pdf') {
       await handlePdfUpload(file);
     } else {
@@ -125,9 +147,8 @@ export default function Library({ apiKey, onOpenBook }) {
       if (!text || !text.trim()) { setError('الحافظة فارغة'); return; }
       setUploading(true);
       await createTextBook('نص ملصوق - ' + new Date().toLocaleDateString('ar-EG'), text);
-      await loadBooks();
     } catch (e) { setError('تعذر القراءة من الحافظة: ' + e.message); }
-    finally { setUploading(false); }
+    finally { setUploading(false); await loadBooks(); }
   };
 
   const handleUrlSubmit = async () => {
