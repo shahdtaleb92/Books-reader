@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import ApiKeyInput from './components/ApiKeyInput';
 import Library from './components/Library';
 import BookReader from './components/BookReader';
+import ErrorBoundary from './components/ErrorBoundary';
 import { cleanupOldAudio } from './utils/api.js';
 import './App.css';
 
@@ -29,12 +30,18 @@ function App() {
   // Reader mode: full-screen immersive
   if (apiKey && activeBookId) {
     return (
-      <BookReader
-        bookId={activeBookId}
-        apiKey={apiKey}
-        ttsApiKey={ttsApiKey}
+      <ErrorBoundary
+        key={activeBookId}
         onBack={handleBackToLibrary}
-      />
+        onReset={() => {}}
+      >
+        <BookReader
+          bookId={activeBookId}
+          apiKey={apiKey}
+          ttsApiKey={ttsApiKey}
+          onBack={handleBackToLibrary}
+        />
+      </ErrorBoundary>
     );
   }
 

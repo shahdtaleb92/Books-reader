@@ -69,9 +69,12 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         }
 
         if (cancelled) return;
+        if (!bookData) throw new Error('تعذر تحميل بيانات الكتاب');
+        if (!pageTexts) pageTexts = {};
         setBook(bookData);
         setTexts(pageTexts);
-        if (bookData.last_page > 0) setCurrentPage(bookData.last_page);
+        const maxPage = bookData.source_type === 'pdf' ? 0 : Math.max((bookData.total_pages || 1) - 1, 0);
+        if (bookData.last_page > 0 && bookData.last_page <= maxPage) setCurrentPage(bookData.last_page);
 
         if (bookData.source_type === 'pdf') {
           try {
