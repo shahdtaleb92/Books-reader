@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ARABIC_VOICES, generateAudioForText } from '../utils/ttsUtils.js';
+import { ARABIC_VOICES, generateAudioForText, reconstructChunkTimings } from '../utils/ttsUtils.js';
 import { fetchPageAudio, savePageAudio, fetchSavedAudioPages, deletePageAudio } from '../utils/api.js';
 import { cacheAudio, getCachedAudio, deleteCachedAudio } from '../utils/offlineCache.js';
 
@@ -101,7 +101,7 @@ export function usePageTTS(apiKey, bookId) {
         return;
       }
 
-      const currentTime = audio.currentTime + highlightOffset * (audio.playbackRate || 1);
+      const currentTime = audio.currentTime + highlightOffset;
       let idx = 0;
 
       if (timings && timings.length > 0 && chunkWeights) {
@@ -259,12 +259,21 @@ export function usePageTTS(apiKey, bookId) {
         return;
       }
 
-      // Store chunk timings for word tracking
-      chunkTimingsRef.current = result.chunkTimings || null;
-
       const audio = new Audio(result.audioUrl);
       audio.playbackRate = playbackRate;
       audioRef.current = audio;
+
+      // Store chunk timings — reconstruct from text if missing (cached audio)
+      if (result.chunkTimings) {
+        chunkTimingsRef.current = result.chunkTimings;
+      } else {
+        chunkTimingsRef.current = null;
+        audio.addEventListener('loadedmetadata', () => {
+          if (audio.duration && isFinite(audio.duration)) {
+            chunkTimingsRef.current = reconstructChunkTimings(text, audio.duration);
+          }
+        }, { once: true });
+      }
 
       audio.onended = () => {
         setPlaying(false);
@@ -273,7 +282,6 @@ export function usePageTTS(apiKey, bookId) {
         stopWordTracking();
         chunkTimingsRef.current = null;
 
-        // Notify BookReader to auto-advance to next page
         if (onPageFinishedRef.current) {
           onPageFinishedRef.current(pageNum);
         }

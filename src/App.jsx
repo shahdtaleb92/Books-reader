@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import ApiKeyInput from './components/ApiKeyInput';
 import Library from './components/Library';
 import BookReader from './components/BookReader';
+import { cleanupOldAudio } from './utils/api.js';
 import './App.css';
 
 function App() {
@@ -11,6 +12,10 @@ function App() {
   const [ttsApiKey, setTtsApiKey] = useState(
     () => localStorage.getItem('tts_api_key') || ''
   );
+
+  useEffect(() => {
+    cleanupOldAudio().catch(() => {});
+  }, []);
   const [activeBookId, setActiveBookId] = useState(null);
 
   const handleOpenBook = useCallback((bookId) => {

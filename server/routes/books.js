@@ -32,6 +32,14 @@ const upload = multer({
 
 const router = Router();
 
+// Cleanup audio older than 30 days (must be before /:id routes)
+router.delete('/audio/cleanup', (req, res) => {
+  const result = db.prepare(
+    "DELETE FROM audio WHERE created_at < datetime('now', '-30 days')"
+  ).run();
+  res.json({ deleted: result.changes });
+});
+
 // List all books
 router.get('/', (req, res) => {
   const books = db.prepare('SELECT * FROM books ORDER BY created_at DESC').all();

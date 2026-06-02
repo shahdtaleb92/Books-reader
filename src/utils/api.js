@@ -121,3 +121,9 @@ export async function deletePageAudio(bookId, pageNum, voice) {
   if (!res.ok) throw new Error('Failed to delete audio');
   return res.json();
 }
+
+export async function cleanupOldAudio() {
+  const res = await fetch(`${BASE}/audio/cleanup`, { method: 'DELETE' });
+  if (!res.ok) return { deleted: 0 };
+  return res.json();
+}

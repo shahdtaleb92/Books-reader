@@ -123,6 +123,37 @@ export async function synthesizeText(apiKey, text, voiceName) {
   return audioData;
 }
 
+export function reconstructChunkTimings(text, totalDuration) {
+  if (!text || !totalDuration || totalDuration <= 0) return null;
+
+  const chunks = splitTextIntoChunks(text);
+  if (chunks.length === 0) return null;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  const encoder = new TextEncoder();
+  const chunkBytes = chunks.map((c) => encoder.encode(c).length);
+  const totalBytes = chunkBytes.reduce((sum, b) => sum + b, 0);
+
+  let timeOffset = 0;
+  let wordOffset = 0;
+  const timings = chunks.map((chunk, i) => {
+    const duration = totalBytes > 0 ? (chunkBytes[i] / totalBytes) * totalDuration : totalDuration / chunks.length;
+    const chunkWords = chunk.split(/\s+/).filter(Boolean);
+    const timing = {
+      startTime: timeOffset,
+      endTime: timeOffset + duration,
+      wordStart: wordOffset,
+      wordEnd: wordOffset + chunkWords.length - 1,
+      wordCount: chunkWords.length,
+    };
+    timeOffset += duration;
+    wordOffset += chunkWords.length;
+    return timing;
+  });
+
+  return timings;
+}
+
 export async function generateAudioForText(apiKey, text, voiceName) {
   if (!text || !text.trim()) return null;
 
