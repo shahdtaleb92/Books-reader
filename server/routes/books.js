@@ -20,8 +20,10 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    if (allowed.includes(file.mimetype)) {
+    const allowedMimes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const ext = file.originalname.split('.').pop().toLowerCase();
+    const allowedExts = ['pdf', 'docx'];
+    if (allowedMimes.includes(file.mimetype) || allowedExts.includes(ext)) {
       cb(null, true);
     } else {
       cb(new Error('Only PDF and DOCX files are allowed'));
@@ -53,7 +55,8 @@ router.post('/', upload.single('file'), async (req, res) => {
   }
 
   const title = req.body.title || req.file.originalname.replace(/\.[^.]+$/, '');
-  const isDocx = req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const ext = req.file.originalname.split('.').pop().toLowerCase();
+  const isDocx = ext === 'docx' || req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
   if (isDocx) {
     try {

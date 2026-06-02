@@ -111,8 +111,10 @@ export default function Library({ apiKey, onOpenBook }) {
       try { await uploadBook(file); await loadBooks(); }
       catch (e) { setError(e.message); }
       finally { setUploading(false); }
-    } else if (file.type === 'application/pdf') {
+    } else if (ext === 'pdf' || file.type === 'application/pdf') {
       await handlePdfUpload(file);
+    } else {
+      setError('نوع الملف غير مدعوم. الأنواع المدعومة: PDF, TXT, DOCX');
     }
   };
 
