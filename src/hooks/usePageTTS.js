@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ARABIC_VOICES, generateAudioForText, reconstructChunkTimings, getWordSpokenWeight } from '../utils/ttsUtils.js';
+import { ARABIC_VOICES, generateAudioForText, reconstructChunkTimings, getWordSpokenWeight, detectSilences } from '../utils/ttsUtils.js';
 import { fetchPageAudio, savePageAudio, fetchSavedAudioPages, deletePageAudio } from '../utils/api.js';
 import { cacheAudio, getCachedAudio, deleteCachedAudio } from '../utils/offlineCache.js';
 
@@ -57,10 +57,14 @@ export function usePageTTS(apiKey, bookId) {
   const [highlightOffset, setHighlightOffset] = useState(() => {
     return parseFloat(localStorage.getItem('tts_highlight_offset') || '0.15');
   });
+  const highlightOffsetRef = useRef(highlightOffset);
 
   useEffect(() => {
+    highlightOffsetRef.current = highlightOffset;
     localStorage.setItem('tts_highlight_offset', String(highlightOffset));
   }, [highlightOffset]);
+
+  const silencesRef = useRef([]);
 
   const buildWordWeights = useCallback((words) => {
     const weights = words.map((w) => getWordSpokenWeight(w));
@@ -78,22 +82,14 @@ export function usePageTTS(apiKey, bookId) {
     return cumulative;
   }, []);
 
-  // Chunk-aware tracking: sentence-level primary, word-level secondary
+  // Chunk-aware tracking with silence detection — reads refs live each frame
   const startWordTracking = useCallback((text) => {
     if (!text) return;
     const words = text.split(/\s+/).filter(Boolean);
     if (words.length === 0) return;
 
-    const timings = chunkTimingsRef.current;
-
-    // Pre-compute per-chunk word weights
-    let chunkWeights = null;
-    if (timings && timings.length > 0) {
-      chunkWeights = timings.map((chunk) => {
-        const chunkWords = words.slice(chunk.wordStart, chunk.wordEnd + 1);
-        return buildWordWeights(chunkWords);
-      });
-    }
+    let cachedChunkWeights = null;
+    let cachedTimingsId = null;
 
     const tick = () => {
       const audio = audioRef.current;
@@ -102,14 +98,35 @@ export function usePageTTS(apiKey, bookId) {
         return;
       }
 
-      const currentTime = audio.currentTime + highlightOffset;
+      const currentTime = audio.currentTime + highlightOffsetRef.current;
+      const timings = chunkTimingsRef.current;
+      const silences = silencesRef.current;
       let idx = 0;
 
-      if (timings && timings.length > 0 && chunkWeights) {
+      // Check if we're in a silence gap — freeze highlight on last word before gap
+      if (silences.length > 0) {
+        const inSilence = silences.find((s) => currentTime >= s.start && currentTime <= s.end);
+        if (inSilence) {
+          animFrameRef.current = requestAnimationFrame(tick);
+          return;
+        }
+      }
+
+      if (timings && timings.length > 0) {
+        // Re-compute chunk weights only if timings changed
+        const timingsId = timings.length + ':' + timings[0].startTime;
+        if (cachedTimingsId !== timingsId) {
+          cachedChunkWeights = timings.map((chunk) => {
+            const chunkWords = words.slice(chunk.wordStart, chunk.wordEnd + 1);
+            return buildWordWeights(chunkWords);
+          });
+          cachedTimingsId = timingsId;
+        }
+
         let chunkIdx = timings.findIndex((c) => currentTime < c.endTime);
         if (chunkIdx === -1) chunkIdx = timings.length - 1;
         const chunk = timings[chunkIdx];
-        const cumulative = chunkWeights[chunkIdx];
+        const cumulative = cachedChunkWeights[chunkIdx];
 
         const chunkDuration = chunk.endTime - chunk.startTime;
         const chunkProgress = chunkDuration > 0
@@ -133,7 +150,7 @@ export function usePageTTS(apiKey, bookId) {
     };
 
     animFrameRef.current = requestAnimationFrame(tick);
-  }, [buildWordWeights, highlightOffset]);
+  }, [buildWordWeights]);
 
   const stopWordTracking = useCallback(() => {
     if (animFrameRef.current) {
@@ -167,10 +184,10 @@ export function usePageTTS(apiKey, bookId) {
       try {
         // 1. Check local IndexedDB cache first (works offline)
         if (bookId) {
-          const localBlob = await getCachedAudio(bookId, pageNum, selectedVoice.name);
-          if (localBlob) {
-            const audioUrl = URL.createObjectURL(localBlob);
-            const cached = { audioUrl, chunkTimings: null };
+          const localResult = await getCachedAudio(bookId, pageNum, selectedVoice.name);
+          if (localResult) {
+            const audioUrl = URL.createObjectURL(localResult.blob);
+            const cached = { audioUrl, chunkTimings: localResult.chunkTimings };
             audioCacheRef.current.set(pageNum, cached);
             generatingPagesRef.current.delete(pageNum);
             if (generatingPagesRef.current.size === 0) setGenerating(false);
@@ -180,14 +197,11 @@ export function usePageTTS(apiKey, bookId) {
 
         // 2. Check server cache
         if (bookId) {
-          const serverAudio = await fetchPageAudio(bookId, pageNum, selectedVoice.name);
-          if (serverAudio) {
-            const cached = { audioUrl: serverAudio, chunkTimings: null };
+          const serverResult = await fetchPageAudio(bookId, pageNum, selectedVoice.name);
+          if (serverResult) {
+            const cached = { audioUrl: serverResult.audioUrl, chunkTimings: serverResult.chunkTimings };
             audioCacheRef.current.set(pageNum, cached);
-            // Save to IndexedDB for offline use
-            fetch(serverAudio).then((r) => r.blob()).then((blob) => {
-              cacheAudio(bookId, pageNum, selectedVoice.name, blob);
-            }).catch(() => {});
+            cacheAudio(bookId, pageNum, selectedVoice.name, serverResult.blob, serverResult.chunkTimings);
             generatingPagesRef.current.delete(pageNum);
             if (generatingPagesRef.current.size === 0) setGenerating(false);
             return cached;
@@ -199,13 +213,13 @@ export function usePageTTS(apiKey, bookId) {
         if (result) {
           audioCacheRef.current.set(pageNum, result);
 
-          // Save to server + IndexedDB in background
+          // Save to server + IndexedDB in background WITH chunk timings
           if (bookId) {
             fetch(result.audioUrl)
               .then((r) => r.blob())
               .then((blob) => {
-                savePageAudio(bookId, pageNum, selectedVoice.name, blob).catch(() => {});
-                cacheAudio(bookId, pageNum, selectedVoice.name, blob);
+                savePageAudio(bookId, pageNum, selectedVoice.name, blob, result.chunkTimings).catch(() => {});
+                cacheAudio(bookId, pageNum, selectedVoice.name, blob, result.chunkTimings);
                 setSavedPages((prev) => new Set([...prev, pageNum]));
               })
               .catch(() => {});
@@ -276,12 +290,17 @@ export function usePageTTS(apiKey, bookId) {
         }, { once: true });
       }
 
+      // Detect silence gaps in the audio for precise highlight pausing
+      silencesRef.current = [];
+      detectSilences(result.audioUrl).then((s) => { silencesRef.current = s; }).catch(() => {});
+
       audio.onended = () => {
         setPlaying(false);
         setPaused(false);
         setCurrentReadingPage(-1);
         stopWordTracking();
         chunkTimingsRef.current = null;
+        silencesRef.current = [];
 
         if (onPageFinishedRef.current) {
           onPageFinishedRef.current(pageNum);
@@ -294,6 +313,7 @@ export function usePageTTS(apiKey, bookId) {
         setError('خطأ في تشغيل الصوت');
         stopWordTracking();
         chunkTimingsRef.current = null;
+        silencesRef.current = [];
       };
 
       await audio.play();
@@ -398,6 +418,7 @@ export function usePageTTS(apiKey, bookId) {
     setCurrentReadingPage(-1);
     stopWordTracking();
     chunkTimingsRef.current = null;
+    silencesRef.current = [];
   }, [stopWordTracking]);
 
   // Seek forward/backward by seconds

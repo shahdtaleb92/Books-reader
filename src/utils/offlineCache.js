@@ -26,11 +26,12 @@ function makeTextKey(bookId, pageNum) {
   return `${bookId}:${pageNum}`;
 }
 
-export async function cacheAudio(bookId, pageNum, voice, blob) {
+export async function cacheAudio(bookId, pageNum, voice, blob, chunkTimings) {
   try {
     const db = await openDB();
     const tx = db.transaction('audio', 'readwrite');
-    tx.objectStore('audio').put(blob, makeAudioKey(bookId, pageNum, voice));
+    const data = chunkTimings ? { blob, chunkTimings } : blob;
+    tx.objectStore('audio').put(data, makeAudioKey(bookId, pageNum, voice));
     await new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
@@ -44,7 +45,17 @@ export async function getCachedAudio(bookId, pageNum, voice) {
     const tx = db.transaction('audio', 'readonly');
     const req = tx.objectStore('audio').get(makeAudioKey(bookId, pageNum, voice));
     return new Promise((resolve) => {
-      req.onsuccess = () => resolve(req.result || null);
+      req.onsuccess = () => {
+        const data = req.result;
+        if (!data) return resolve(null);
+        if (data instanceof Blob) {
+          resolve({ blob: data, chunkTimings: null });
+        } else if (data && data.blob) {
+          resolve({ blob: data.blob, chunkTimings: data.chunkTimings || null });
+        } else {
+          resolve(null);
+        }
+      };
       req.onerror = () => resolve(null);
     });
   } catch {

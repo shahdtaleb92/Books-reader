@@ -168,6 +168,43 @@ export function reconstructChunkTimings(text, totalDuration) {
   return timings;
 }
 
+export async function detectSilences(audioUrl) {
+  try {
+    const response = await fetch(audioUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength < 45) return [];
+    const samples = new Int16Array(arrayBuffer, 44);
+    const sampleRate = 24000;
+    const windowSize = Math.round(sampleRate * 0.025);
+    const threshold = 600;
+    const silences = [];
+    let inSilence = false;
+    let silenceStart = 0;
+
+    for (let i = 0; i < samples.length; i += windowSize) {
+      const end = Math.min(i + windowSize, samples.length);
+      let maxAmp = 0;
+      for (let j = i; j < end; j++) {
+        const amp = Math.abs(samples[j]);
+        if (amp > maxAmp) maxAmp = amp;
+      }
+      const time = i / sampleRate;
+      if (maxAmp < threshold) {
+        if (!inSilence) { silenceStart = time; inSilence = true; }
+      } else if (inSilence) {
+        const duration = time - silenceStart;
+        if (duration >= 0.12) {
+          silences.push({ start: silenceStart, end: time });
+        }
+        inSilence = false;
+      }
+    }
+    return silences;
+  } catch {
+    return [];
+  }
+}
+
 export async function generateAudioForText(apiKey, text, voiceName) {
   if (!text || !text.trim()) return null;
 

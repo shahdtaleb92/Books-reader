@@ -405,11 +405,14 @@ router.get('/:id/audio/:pageNum', (req, res) => {
   if (!voice) return res.status(400).json({ error: 'voice query param required' });
 
   const row = db.prepare(
-    'SELECT audio_data FROM audio WHERE book_id = ? AND page_number = ? AND voice_name = ?'
+    'SELECT audio_data, chunk_timings FROM audio WHERE book_id = ? AND page_number = ? AND voice_name = ?'
   ).get(req.params.id, req.params.pageNum, voice);
 
   if (!row) return res.status(404).json({ error: 'No saved audio' });
 
+  if (row.chunk_timings) {
+    res.set('X-Chunk-Timings', row.chunk_timings);
+  }
   res.set('Content-Type', 'audio/wav');
   res.send(row.audio_data);
 });
@@ -418,6 +421,8 @@ router.get('/:id/audio/:pageNum', (req, res) => {
 router.post('/:id/audio/:pageNum', (req, res) => {
   const { voice } = req.query;
   if (!voice) return res.status(400).json({ error: 'voice query param required' });
+
+  const chunkTimings = req.headers['x-chunk-timings'] || '';
 
   const chunks = [];
   req.on('data', (chunk) => chunks.push(chunk));
@@ -428,10 +433,10 @@ router.post('/:id/audio/:pageNum', (req, res) => {
     }
 
     db.prepare(`
-      INSERT INTO audio (book_id, page_number, voice_name, audio_data)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(book_id, page_number, voice_name) DO UPDATE SET audio_data = excluded.audio_data, created_at = CURRENT_TIMESTAMP
-    `).run(req.params.id, req.params.pageNum, voice, audioData);
+      INSERT INTO audio (book_id, page_number, voice_name, audio_data, chunk_timings)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(book_id, page_number, voice_name) DO UPDATE SET audio_data = excluded.audio_data, chunk_timings = excluded.chunk_timings, created_at = CURRENT_TIMESTAMP
+    `).run(req.params.id, req.params.pageNum, voice, audioData, chunkTimings);
 
     res.json({ success: true });
   });

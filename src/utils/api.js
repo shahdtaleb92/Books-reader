@@ -95,13 +95,26 @@ export async function fetchPageAudio(bookId, pageNum, voice) {
   const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('Failed to fetch audio');
+
+  let chunkTimings = null;
+  const timingsHeader = res.headers.get('X-Chunk-Timings');
+  if (timingsHeader) {
+    try { chunkTimings = JSON.parse(timingsHeader); } catch {}
+  }
+
   const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  const audioUrl = URL.createObjectURL(blob);
+  return { audioUrl, chunkTimings, blob };
 }
 
-export async function savePageAudio(bookId, pageNum, voice, blob) {
+export async function savePageAudio(bookId, pageNum, voice, blob, chunkTimings) {
+  const headers = {};
+  if (chunkTimings) {
+    headers['X-Chunk-Timings'] = JSON.stringify(chunkTimings);
+  }
   const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`, {
     method: 'POST',
+    headers,
     body: blob,
   });
   if (!res.ok) throw new Error('Failed to save audio');

@@ -92,4 +92,11 @@ try {
   }
 } catch { /* fresh database, no migrations needed */ }
 
+try {
+  const audioCols = db.prepare("PRAGMA table_info(audio)").all().map(c => c.name);
+  if (!audioCols.includes('chunk_timings')) {
+    db.exec("ALTER TABLE audio ADD COLUMN chunk_timings TEXT DEFAULT ''");
+  }
+} catch { /* fresh database */ }
+
 export default db;
