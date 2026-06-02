@@ -114,17 +114,14 @@ export async function clearAllCachedAudio() {
 }
 
 export async function clearAllData() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(['audio', 'texts'], 'readwrite');
-    tx.objectStore('audio').clear();
-    tx.objectStore('texts').clear();
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch { /* ignore */ }
   localStorage.clear();
+  await new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = resolve;
+    req.onerror = resolve;
+    req.onblocked = resolve;
+    setTimeout(resolve, 3000);
+  });
 }
 
 export async function getCachedTexts(bookId, totalPages) {

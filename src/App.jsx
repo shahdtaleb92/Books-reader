@@ -14,6 +14,8 @@ function App() {
   const [ttsApiKey, setTtsApiKey] = useState(
     () => localStorage.getItem('tts_api_key') || ''
   );
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     cleanupOldAudio().catch(() => {});
@@ -65,17 +67,35 @@ function App() {
           <Library apiKey={apiKey} onOpenBook={handleOpenBook} />
         )}
 
-        <button
-          className="clear-all-data-btn"
-          onClick={async () => {
-            if (confirm('سيتم حذف جميع البيانات المحفوظة (المفاتيح، الإعدادات، الصوت المحفوظ). هل أنت متأكد؟')) {
-              await clearAllData();
-              window.location.reload();
-            }
-          }}
-        >
-          مسح جميع البيانات المحفوظة
-        </button>
+        {!clearConfirm ? (
+          <button
+            className="clear-all-data-btn"
+            onClick={() => setClearConfirm(true)}
+          >
+            مسح جميع البيانات المحفوظة
+          </button>
+        ) : (
+          <div className="clear-confirm-row">
+            <span>هل أنت متأكد؟ سيتم حذف كل شيء</span>
+            <button
+              className="clear-all-data-btn confirm"
+              disabled={clearing}
+              onClick={async () => {
+                setClearing(true);
+                await clearAllData();
+                window.location.reload();
+              }}
+            >
+              {clearing ? 'جاري الحذف...' : 'نعم، احذف'}
+            </button>
+            <button
+              className="clear-all-data-btn"
+              onClick={() => setClearConfirm(false)}
+            >
+              إلغاء
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );
