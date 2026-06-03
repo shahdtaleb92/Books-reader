@@ -61,6 +61,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Hide scrollbars everywhere — scrolling still works via touch/wheel/keys */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 body {
   font-family: var(--font-ui);
   background: var(--bg);
@@ -640,24 +644,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .font-size-btn:hover:not(:disabled) { background: var(--bg-warm); color: var(--text); }
 .font-size-btn .font-a-small { font-size: 0.8rem; font-weight: 700; }
 .font-size-btn .font-a-large { font-size: 1.25rem; font-weight: 700; }
-
-/* Reading progress bar (always visible) */
-.reading-progress {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--bg-warm);
-  z-index: 12;
-  pointer-events: none;
-}
-
-.reading-progress-fill {
-  height: 100%;
-  background: var(--accent);
-  transition: width var(--t);
-}
 
 /* Page container */
 .page-container {

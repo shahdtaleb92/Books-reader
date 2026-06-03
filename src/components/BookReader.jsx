@@ -341,14 +341,6 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         </button>
       </div>
 
-      {/* Reading progress (always visible) */}
-      <div className="reading-progress" aria-hidden="true">
-        <div
-          className="reading-progress-fill"
-          style={{ width: `${totalPages ? ((currentPage + 1) / totalPages) * 100 : 0}%` }}
-        />
-      </div>
-
       {/* Page area */}
       <div
         className="page-container"
