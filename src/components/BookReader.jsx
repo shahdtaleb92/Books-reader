@@ -37,7 +37,7 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   const { extractText, loading: ocrLoading } = useGeminiOCR(apiKey);
   const pageTTS = usePageTTS(ttsApiKey, bookId);
 
-  const totalPages = book?.source_type === 'pdf' ? pages.length : (book?.total_pages || 0);
+  const totalPages = Math.max(pages.length, book?.total_pages || 0);
 
   // Auto page flip on TTS finish
   useEffect(() => {
