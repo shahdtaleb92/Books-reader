@@ -37,6 +37,8 @@ export default function Library({ apiKey, onOpenBook }) {
   const [search, setSearch] = useState('');
   const [urlInput, setUrlInput] = useState('');
   const [loadingUrl, setLoadingUrl] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [loadingBooks, setLoadingBooks] = useState(true);
   const { extractText } = useGeminiOCR(apiKey);
 
   const loadBooks = useCallback(async () => {
@@ -45,6 +47,8 @@ export default function Library({ apiKey, onOpenBook }) {
       setBooks(data);
     } catch (e) {
       setError(e.message);
+    } finally {
+      setLoadingBooks(false);
     }
   }, []);
 
@@ -164,7 +168,7 @@ export default function Library({ apiKey, onOpenBook }) {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('هل تريد حذف هذا الكتاب؟')) return;
+    setConfirmDelete(null);
     try {
       await deleteBook(id);
       setBooks((prev) => prev.filter((b) => b.id !== id));
@@ -255,7 +259,18 @@ export default function Library({ apiKey, onOpenBook }) {
         </div>
       )}
 
-      {books.length === 0 && !uploading && (
+      {loadingBooks && books.length === 0 && (
+        <div className="book-grid" aria-hidden="true">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="book-card-skeleton">
+              <div className="skeleton-cover" />
+              <div className="skeleton-line" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loadingBooks && books.length === 0 && !uploading && (
         <div className="library-empty">
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" opacity="0.3">
             <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
@@ -269,12 +284,33 @@ export default function Library({ apiKey, onOpenBook }) {
       <div className="book-grid">
         {filteredBooks.map((book) => {
           const [bg, bgDark] = getCoverColor(book.id);
+          const isConfirming = confirmDelete === book.id;
           return (
             <div key={book.id} className="book-card" onClick={() => onOpenBook(book.id)}>
               <div className="book-cover" style={{ background: `linear-gradient(145deg, ${bg}, ${bgDark})` }}>
                 <SourceBadge type={book.source_type} />
                 <div className="cover-title">{book.title}</div>
                 <div className="cover-pages">{book.total_pages} صفحة</div>
+
+                {isConfirming && (
+                  <div className="delete-confirm-overlay" onClick={(e) => e.stopPropagation()}>
+                    <p>حذف هذا الكتاب؟</p>
+                    <div className="delete-confirm-actions">
+                      <button
+                        className="delete-confirm-yes"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(book.id); }}
+                      >
+                        حذف
+                      </button>
+                      <button
+                        className="delete-confirm-no"
+                        onClick={(e) => { e.stopPropagation(); setConfirmDelete(null); }}
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="book-meta">
                 <span className="book-meta-title">{book.title}</span>
@@ -282,8 +318,8 @@ export default function Library({ apiKey, onOpenBook }) {
               </div>
               <button
                 className="delete-btn"
-                onClick={(e) => { e.stopPropagation(); handleDelete(book.id); }}
-                aria-label="حذف الكتاب"
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete(book.id); }}
+                aria-label={`حذف الكتاب: ${book.title}`}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />

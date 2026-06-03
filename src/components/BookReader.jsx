@@ -16,10 +16,23 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   const [showControls, setShowControls] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [showTTS, setShowTTS] = useState(false);
+  const [fontScale, setFontScale] = useState(
+    () => parseFloat(localStorage.getItem('reader_font_scale') || '1')
+  );
   const positionTimerRef = useRef(null);
   const controlsTimerRef = useRef(null);
   const readingRef = useRef(null);
   const hasRestoredRef = useRef(false);
+  const touchStartRef = useRef(null);
+
+  // Persist reading font size
+  useEffect(() => {
+    localStorage.setItem('reader_font_scale', String(fontScale));
+  }, [fontScale]);
+
+  const adjustFontScale = useCallback((delta) => {
+    setFontScale((s) => Math.min(1.8, Math.max(0.8, Math.round((s + delta) * 10) / 10)));
+  }, []);
 
   const { extractText, loading: ocrLoading } = useGeminiOCR(apiKey);
   const pageTTS = usePageTTS(ttsApiKey, bookId);
@@ -166,6 +179,36 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     [pages, texts, extractText, pageTTS, bookId, apiKey, totalPages]
   );
 
+  // Swipe to turn pages (mobile). In this RTL reader the on-screen "next"
+  // control sits on the left, so swiping the page leftward advances.
+  const handleTouchStart = useCallback((e) => {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+  }, []);
+
+  const handleTouchEnd = useCallback((e) => {
+    const start = touchStartRef.current;
+    if (!start || editMode) return;
+    touchStartRef.current = null;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      handlePageChange(dx < 0 ? currentPage + 1 : currentPage - 1);
+    }
+  }, [editMode, currentPage, handlePageChange]);
+
+  // Keyboard navigation (desktop). RTL: ArrowLeft = next, ArrowRight = previous.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (editMode || e.target.matches('input, textarea, select')) return;
+      if (e.key === 'ArrowLeft') handlePageChange(currentPage + 1);
+      else if (e.key === 'ArrowRight') handlePageChange(currentPage - 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editMode, currentPage, handlePageChange]);
+
   const handleTextChange = useCallback((newText) => {
     setTexts((prev) => ({ ...prev, [currentPage]: newText }));
   }, [currentPage]);
@@ -199,7 +242,8 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
       const elRect = el.getBoundingClientRect();
       const relativeTop = elRect.top - containerRect.top + container.scrollTop;
       const target = relativeTop - containerRect.height / 3;
-      container.scrollTo({ top: target, behavior: 'smooth' });
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      container.scrollTo({ top: target, behavior: reduced ? 'auto' : 'smooth' });
     }
   }, [pageTTS.currentWordIndex, pageTTS.playing]);
 
@@ -266,10 +310,29 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
           </svg>
         </button>
         <span className="reader-title">{book?.title}</span>
+        <div className="font-size-controls" role="group" aria-label="حجم الخط">
+          <button
+            onClick={() => adjustFontScale(-0.1)}
+            disabled={fontScale <= 0.8}
+            className="font-size-btn"
+            aria-label="تصغير الخط"
+          >
+            <span className="font-a-small">ا</span>
+          </button>
+          <button
+            onClick={() => adjustFontScale(0.1)}
+            disabled={fontScale >= 1.8}
+            className="font-size-btn"
+            aria-label="تكبير الخط"
+          >
+            <span className="font-a-large">ا</span>
+          </button>
+        </div>
         <button
           onClick={() => setEditMode(!editMode)}
           className={`edit-toggle-btn ${editMode ? 'active' : ''}`}
           aria-label="تعديل النص"
+          aria-pressed={editMode}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -278,8 +341,20 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         </button>
       </div>
 
+      {/* Reading progress (always visible) */}
+      <div className="reading-progress" aria-hidden="true">
+        <div
+          className="reading-progress-fill"
+          style={{ width: `${totalPages ? ((currentPage + 1) / totalPages) * 100 : 0}%` }}
+        />
+      </div>
+
       {/* Page area */}
-      <div className="page-container">
+      <div
+        className="page-container"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <div className={`book-page ${editMode ? 'edit-mode' : ''}`}>
           {ocrLoading && (
             <div className="page-loading">جاري استخراج النص...</div>
@@ -293,11 +368,12 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
               dir="rtl"
               lang="ar"
               placeholder="سيظهر النص هنا..."
+              style={{ fontSize: `${1.2 * fontScale}rem` }}
             />
           )}
 
           {!ocrLoading && !editMode && (
-            <div className="page-text" ref={readingRef} dir="rtl" lang="ar">
+            <div className="page-text" ref={readingRef} dir="rtl" lang="ar" style={{ fontSize: `${1.2 * fontScale}rem` }}>
               {!currentText && (
                 <div className="page-empty">لا يوجد نص في هذه الصفحة</div>
               )}
