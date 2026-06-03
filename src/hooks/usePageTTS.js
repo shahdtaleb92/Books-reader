@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ARABIC_VOICES, generateAudioForText, reconstructChunkTimings, getWordSpokenWeight, detectSilences } from '../utils/ttsUtils.js';
+import { ARABIC_VOICES, generateAudioForText, reconstructChunkTimings, getWordSpokenWeight } from '../utils/ttsUtils.js';
 import { fetchPageAudio, savePageAudio, fetchSavedAudioPages, deletePageAudio } from '../utils/api.js';
 import { cacheAudio, getCachedAudio, deleteCachedAudio } from '../utils/offlineCache.js';
 
@@ -23,7 +23,8 @@ export function usePageTTS(apiKey, bookId) {
 
   const audioCacheRef = useRef(new Map()); // pageNum -> { audioUrl, chunkTimings }
   const audioRef = useRef(null);
-  const generatingPagesRef = useRef(new Set());
+  const inFlightRef = useRef(new Map()); // pageNum -> Promise<result> (dedup concurrent generation)
+  const playTokenRef = useRef(0); // guards against stale play() resolving after a newer play
   const stoppedRef = useRef(false);
   const animFrameRef = useRef(null);
   const textsRef = useRef({});
@@ -64,8 +65,6 @@ export function usePageTTS(apiKey, bookId) {
     localStorage.setItem('tts_highlight_offset', String(highlightOffset));
   }, [highlightOffset]);
 
-  const silencesRef = useRef([]);
-
   const buildWordWeights = useCallback((words) => {
     const weights = words.map((w) => getWordSpokenWeight(w));
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
@@ -100,17 +99,7 @@ export function usePageTTS(apiKey, bookId) {
 
       const currentTime = audio.currentTime + highlightOffsetRef.current;
       const timings = chunkTimingsRef.current;
-      const silences = silencesRef.current;
       let idx = 0;
-
-      // Check if we're in a silence gap — freeze highlight on last word before gap
-      if (silences.length > 0) {
-        const inSilence = silences.find((s) => currentTime >= s.start && currentTime <= s.end);
-        if (inSilence) {
-          animFrameRef.current = requestAnimationFrame(tick);
-          return;
-        }
-      }
 
       if (timings && timings.length > 0) {
         // Re-compute chunk weights only if timings changed
@@ -170,69 +159,73 @@ export function usePageTTS(apiKey, bookId) {
     return -1; // no more pages with content
   }, []);
 
-  // Generate audio for a specific page (check server first)
+  // Generate audio for a specific page (check caches first).
+  // Concurrent calls for the same page share a single in-flight promise so a
+  // prefetch never makes a real playback request return null (which hung audio).
   // Returns { audioUrl, chunkTimings } or null
   const generatePageAudio = useCallback(
-    async (pageNum, text) => {
-      if (!apiKey || !text || !text.trim()) return null;
-      if (audioCacheRef.current.has(pageNum)) return audioCacheRef.current.get(pageNum);
-      if (generatingPagesRef.current.has(pageNum)) return null;
+    (pageNum, text) => {
+      if (!apiKey || !text || !text.trim()) return Promise.resolve(null);
+      if (audioCacheRef.current.has(pageNum)) {
+        return Promise.resolve(audioCacheRef.current.get(pageNum));
+      }
+      if (inFlightRef.current.has(pageNum)) return inFlightRef.current.get(pageNum);
 
-      generatingPagesRef.current.add(pageNum);
       setGenerating(true);
 
-      try {
-        // 1. Check local IndexedDB cache first (works offline)
-        if (bookId) {
-          const localResult = await getCachedAudio(bookId, pageNum, selectedVoice.name);
-          if (localResult) {
-            const audioUrl = URL.createObjectURL(localResult.blob);
-            const cached = { audioUrl, chunkTimings: localResult.chunkTimings };
-            audioCacheRef.current.set(pageNum, cached);
-            generatingPagesRef.current.delete(pageNum);
-            if (generatingPagesRef.current.size === 0) setGenerating(false);
-            return cached;
-          }
-        }
-
-        // 2. Check server cache
-        if (bookId) {
-          const serverResult = await fetchPageAudio(bookId, pageNum, selectedVoice.name);
-          if (serverResult) {
-            const cached = { audioUrl: serverResult.audioUrl, chunkTimings: serverResult.chunkTimings };
-            audioCacheRef.current.set(pageNum, cached);
-            cacheAudio(bookId, pageNum, selectedVoice.name, serverResult.blob, serverResult.chunkTimings);
-            generatingPagesRef.current.delete(pageNum);
-            if (generatingPagesRef.current.size === 0) setGenerating(false);
-            return cached;
-          }
-        }
-
-        // 3. Generate fresh audio
-        const result = await generateAudioForText(apiKey, text, selectedVoice.name);
-        if (result) {
-          audioCacheRef.current.set(pageNum, result);
-
-          // Save to server + IndexedDB in background WITH chunk timings
+      const work = (async () => {
+        try {
+          // 1. Check local IndexedDB cache first (works offline)
           if (bookId) {
-            fetch(result.audioUrl)
-              .then((r) => r.blob())
-              .then((blob) => {
-                savePageAudio(bookId, pageNum, selectedVoice.name, blob, result.chunkTimings).catch(() => {});
-                cacheAudio(bookId, pageNum, selectedVoice.name, blob, result.chunkTimings);
-                setSavedPages((prev) => new Set([...prev, pageNum]));
-              })
-              .catch(() => {});
+            const localResult = await getCachedAudio(bookId, pageNum, selectedVoice.name);
+            if (localResult) {
+              const audioUrl = URL.createObjectURL(localResult.blob);
+              const cached = { audioUrl, chunkTimings: localResult.chunkTimings };
+              audioCacheRef.current.set(pageNum, cached);
+              return cached;
+            }
           }
+
+          // 2. Check server cache
+          if (bookId) {
+            const serverResult = await fetchPageAudio(bookId, pageNum, selectedVoice.name);
+            if (serverResult) {
+              const cached = { audioUrl: serverResult.audioUrl, chunkTimings: serverResult.chunkTimings };
+              audioCacheRef.current.set(pageNum, cached);
+              cacheAudio(bookId, pageNum, selectedVoice.name, serverResult.blob, serverResult.chunkTimings);
+              return cached;
+            }
+          }
+
+          // 3. Generate fresh audio
+          const result = await generateAudioForText(apiKey, text, selectedVoice.name);
+          if (result) {
+            audioCacheRef.current.set(pageNum, result);
+
+            // Save to server + IndexedDB in background WITH chunk timings
+            if (bookId) {
+              fetch(result.audioUrl)
+                .then((r) => r.blob())
+                .then((blob) => {
+                  savePageAudio(bookId, pageNum, selectedVoice.name, blob, result.chunkTimings).catch(() => {});
+                  cacheAudio(bookId, pageNum, selectedVoice.name, blob, result.chunkTimings);
+                  setSavedPages((prev) => new Set([...prev, pageNum]));
+                })
+                .catch(() => {});
+            }
+          }
+          return result;
+        } catch (e) {
+          setError(e.message);
+          return null;
+        } finally {
+          inFlightRef.current.delete(pageNum);
+          if (inFlightRef.current.size === 0) setGenerating(false);
         }
-        return result;
-      } catch (e) {
-        setError(e.message);
-        return null;
-      } finally {
-        generatingPagesRef.current.delete(pageNum);
-        if (generatingPagesRef.current.size === 0) setGenerating(false);
-      }
+      })();
+
+      inFlightRef.current.set(pageNum, work);
+      return work;
     },
     [apiKey, selectedVoice, bookId]
   );
@@ -260,6 +253,11 @@ export function usePageTTS(apiKey, bookId) {
       setError(null);
       stopWordTracking();
 
+      // Each play gets a unique token; if a newer play starts (or stop is
+      // called) while this one is still awaiting audio, we abort to avoid
+      // two audios fighting or a stale spinner.
+      const token = ++playTokenRef.current;
+
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
@@ -268,14 +266,22 @@ export function usePageTTS(apiKey, bookId) {
       setCurrentReadingPage(pageNum);
       setGenerating(true);
 
-      const result = await generatePageAudio(pageNum, text);
-      if (!result || stoppedRef.current) {
-        setGenerating(false);
+      let result;
+      try {
+        result = await generatePageAudio(pageNum, text);
+      } catch {
+        result = null;
+      }
+
+      // Bail if a newer play started, the user stopped, or generation failed
+      if (!result || stoppedRef.current || token !== playTokenRef.current) {
+        if (token === playTokenRef.current) setGenerating(false);
         return;
       }
 
       const audio = new Audio(result.audioUrl);
       audio.playbackRate = playbackRate;
+      audio.preload = 'auto';
       audioRef.current = audio;
 
       // Store chunk timings — reconstruct from text if missing (cached audio)
@@ -290,17 +296,12 @@ export function usePageTTS(apiKey, bookId) {
         }, { once: true });
       }
 
-      // Detect silence gaps in the audio for precise highlight pausing
-      silencesRef.current = [];
-      detectSilences(result.audioUrl).then((s) => { silencesRef.current = s; }).catch(() => {});
-
       audio.onended = () => {
         setPlaying(false);
         setPaused(false);
         setCurrentReadingPage(-1);
         stopWordTracking();
         chunkTimingsRef.current = null;
-        silencesRef.current = [];
 
         if (onPageFinishedRef.current) {
           onPageFinishedRef.current(pageNum);
@@ -308,15 +309,35 @@ export function usePageTTS(apiKey, bookId) {
       };
 
       audio.onerror = () => {
+        if (token !== playTokenRef.current) return;
         setPlaying(false);
         setPaused(false);
-        setError('خطأ في تشغيل الصوت');
+        setGenerating(false);
+        setError('خطأ في تشغيل الصوت — حاول إعادة توليد الصوت');
         stopWordTracking();
         chunkTimingsRef.current = null;
-        silencesRef.current = [];
       };
 
-      await audio.play();
+      try {
+        await audio.play();
+      } catch (e) {
+        // play() can reject on mobile (autoplay policy, decode error). Make
+        // sure we never get stuck in the "generating" spinner state.
+        if (token === playTokenRef.current) {
+          setPlaying(false);
+          setPaused(false);
+          setGenerating(false);
+          setError('تعذر تشغيل الصوت: ' + (e?.message || 'حاول مرة أخرى'));
+        }
+        return;
+      }
+
+      // Another play superseded this one while play() was resolving
+      if (token !== playTokenRef.current) {
+        audio.pause();
+        return;
+      }
+
       setPlaying(true);
       setPaused(false);
       setGenerating(false);
@@ -401,13 +422,17 @@ export function usePageTTS(apiKey, bookId) {
 
   const resume = useCallback(() => {
     if (audioRef.current) {
-      audioRef.current.play();
-      setPaused(false);
+      audioRef.current.play().then(() => {
+        setPaused(false);
+      }).catch(() => {
+        setError('تعذر استئناف التشغيل');
+      });
     }
   }, []);
 
   const stop = useCallback(() => {
     stoppedRef.current = true;
+    playTokenRef.current++; // invalidate any in-flight play()
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -415,10 +440,10 @@ export function usePageTTS(apiKey, bookId) {
     }
     setPlaying(false);
     setPaused(false);
+    setGenerating(false);
     setCurrentReadingPage(-1);
     stopWordTracking();
     chunkTimingsRef.current = null;
-    silencesRef.current = [];
   }, [stopWordTracking]);
 
   // Seek forward/backward by seconds

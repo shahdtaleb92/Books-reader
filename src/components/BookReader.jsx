@@ -19,6 +19,7 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   const positionTimerRef = useRef(null);
   const controlsTimerRef = useRef(null);
   const readingRef = useRef(null);
+  const hasRestoredRef = useRef(false);
 
   const { extractText, loading: ocrLoading } = useGeminiOCR(apiKey);
   const pageTTS = usePageTTS(ttsApiKey, bookId);
@@ -73,8 +74,15 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         if (!pageTexts) pageTexts = {};
         setBook(bookData);
         setTexts(pageTexts);
-        const maxPage = bookData.source_type === 'pdf' ? 0 : Math.max((bookData.total_pages || 1) - 1, 0);
-        if (bookData.last_page > 0 && bookData.last_page <= maxPage) setCurrentPage(bookData.last_page);
+        // Restore last reading position. total_pages is stored in the DB for
+        // all source types (including PDF), so bound the saved page by it.
+        const maxPage = Math.max((bookData.total_pages || 1) - 1, 0);
+        if (bookData.last_page > 0 && bookData.last_page <= maxPage) {
+          setCurrentPage(bookData.last_page);
+        }
+        // Only allow position saving after the initial restore, so a slow
+        // load can't clobber the stored last_page with 0.
+        hasRestoredRef.current = true;
 
         if (bookData.source_type === 'pdf') {
           try {
@@ -112,8 +120,9 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   // Auto-read is handled by onPageFinishedRef callback (auto page flip)
   // No separate auto-read effect needed - it was causing unwanted API calls
 
-  // Save position
+  // Save position (only after initial restore to avoid clobbering last_page)
   useEffect(() => {
+    if (!hasRestoredRef.current) return;
     if (positionTimerRef.current) clearTimeout(positionTimerRef.current);
     positionTimerRef.current = setTimeout(() => {
       saveReadingPosition(bookId, currentPage).catch(() => {});
