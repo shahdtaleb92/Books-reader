@@ -5,6 +5,7 @@ import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from '../db.js';
+import { authMiddleware } from '../auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.FLY_APP_NAME ? '/data/uploads' : join(__dirname, '..', '..', 'uploads');
@@ -34,18 +35,47 @@ const upload = multer({
 
 const router = Router();
 
-// Cleanup audio older than 30 days (must be before /:id routes)
+// Every book route requires a logged-in user.
+router.use(authMiddleware);
+
+// Any route with an :id param must reference a book owned by the caller.
+// Unknown OR not-owned both return 404 so owners can't probe each other's ids.
+router.param('id', (req, res, next, id) => {
+  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(id);
+  if (!book || book.user_id !== req.userId) {
+    return res.status(404).json({ error: 'Book not found' });
+  }
+  req.book = book;
+  next();
+});
+
+// Cleanup the caller's audio older than 30 days (must be before /:id routes)
 router.delete('/audio/cleanup', (req, res) => {
   const result = db.prepare(
-    "DELETE FROM audio WHERE created_at < datetime('now', '-30 days')"
-  ).run();
+    "DELETE FROM audio WHERE book_id IN (SELECT id FROM books WHERE user_id = ?) AND created_at < datetime('now', '-30 days')"
+  ).run(req.userId);
   res.json({ deleted: result.changes });
 });
 
-// List all books
+// List the caller's books
 router.get('/', (req, res) => {
-  const books = db.prepare('SELECT * FROM books ORDER BY created_at DESC').all();
+  const books = db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
   res.json(books);
+});
+
+// Delete ALL of the caller's books (used by "delete my data")
+router.delete('/', (req, res) => {
+  const books = db.prepare('SELECT filepath FROM books WHERE user_id = ?').all(req.userId);
+  for (const b of books) {
+    if (b.filepath) {
+      const filepath = join(UPLOADS_DIR, b.filepath);
+      if (existsSync(filepath)) {
+        try { unlinkSync(filepath); } catch { /* ignore */ }
+      }
+    }
+  }
+  const result = db.prepare('DELETE FROM books WHERE user_id = ?').run(req.userId);
+  res.json({ deleted: result.changes });
 });
 
 // Upload a PDF or DOCX file
@@ -78,8 +108,8 @@ router.post('/', upload.single('file'), async (req, res) => {
       }
 
       const bookResult = db.prepare(
-        'INSERT INTO books (title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, 1)'
-      ).run(title, req.file.originalname, req.file.filename, 'docx', pages.length);
+        'INSERT INTO books (user_id, title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, ?, 1)'
+      ).run(req.userId, title, req.file.originalname, req.file.filename, 'docx', pages.length);
 
       const upsert = db.prepare(
         'INSERT INTO pages (book_id, page_number, extracted_text) VALUES (?, ?, ?) ON CONFLICT(book_id, page_number) DO UPDATE SET extracted_text = excluded.extracted_text'
@@ -98,8 +128,8 @@ router.post('/', upload.single('file'), async (req, res) => {
 
   // PDF upload
   const result = db.prepare(
-    'INSERT INTO books (title, filename, filepath, source_type, total_pages) VALUES (?, ?, ?, ?, ?)'
-  ).run(title, req.file.originalname, req.file.filename, 'pdf', parseInt(req.body.totalPages) || 0);
+    'INSERT INTO books (user_id, title, filename, filepath, source_type, total_pages) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(req.userId, title, req.file.originalname, req.file.filename, 'pdf', parseInt(req.body.totalPages) || 0);
 
   const book = db.prepare('SELECT * FROM books WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(book);
@@ -120,8 +150,8 @@ router.post('/text', (req, res) => {
   }
 
   const result = db.prepare(
-    'INSERT INTO books (title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, 1)'
-  ).run(bookTitle, '', '', 'text', pages.length);
+    'INSERT INTO books (user_id, title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, ?, 1)'
+  ).run(req.userId, bookTitle, '', '', 'text', pages.length);
 
   const upsert = db.prepare(
     'INSERT INTO pages (book_id, page_number, extracted_text) VALUES (?, ?, ?) ON CONFLICT(book_id, page_number) DO UPDATE SET extracted_text = excluded.extracted_text'
@@ -136,7 +166,7 @@ router.post('/text', (req, res) => {
 });
 
 // Helper: extract text from HTML and save as book
-function processHtml(html, url, res) {
+function processHtml(html, url, res, userId) {
   let text = html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -167,8 +197,8 @@ function processHtml(html, url, res) {
   }
 
   const result = db.prepare(
-    'INSERT INTO books (title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, 1)'
-  ).run(pageTitle, url, '', 'url', pages.length);
+    'INSERT INTO books (user_id, title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, ?, 1)'
+  ).run(userId, pageTitle, url, '', 'url', pages.length);
 
   const upsert = db.prepare(
     'INSERT INTO pages (book_id, page_number, extracted_text) VALUES (?, ?, ?) ON CONFLICT(book_id, page_number) DO UPDATE SET extracted_text = excluded.extracted_text'
@@ -200,8 +230,8 @@ router.post('/url', async (req, res) => {
     }
 
     const result = db.prepare(
-      'INSERT INTO books (title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, 1)'
-    ).run(pageTitle, url, '', 'url', pages.length);
+      'INSERT INTO books (user_id, title, filename, filepath, source_type, total_pages, extraction_done) VALUES (?, ?, ?, ?, ?, ?, 1)'
+    ).run(req.userId, pageTitle, url, '', 'url', pages.length);
 
     const upsert = db.prepare(
       'INSERT INTO pages (book_id, page_number, extracted_text) VALUES (?, ?, ?) ON CONFLICT(book_id, page_number) DO UPDATE SET extracted_text = excluded.extracted_text'
@@ -266,7 +296,7 @@ router.post('/url', async (req, res) => {
         });
       }
 
-      return processHtml(proxyHtml, url, res);
+      return processHtml(proxyHtml, url, res, req.userId);
     }
 
     if (!response.ok) {
@@ -274,7 +304,7 @@ router.post('/url', async (req, res) => {
     }
 
     const html = await response.text();
-    return processHtml(html, url, res);
+    return processHtml(html, url, res, req.userId);
   } catch (e) {
     res.status(500).json({ error: 'Failed to fetch URL: ' + e.message });
   }

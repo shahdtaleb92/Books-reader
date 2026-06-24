@@ -50,8 +50,23 @@ function openDatabase() {
 const db = openDatabase();
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    salt TEXT NOT NULL,
+    passcode_hash TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS books (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     filename TEXT NOT NULL,
     filepath TEXT NOT NULL DEFAULT '',
@@ -89,6 +104,11 @@ try {
   }
   if (!columns.includes('last_page')) {
     db.exec("ALTER TABLE books ADD COLUMN last_page INTEGER DEFAULT 0");
+  }
+  // Accounts migration: books are now owned by a user. Existing books predate
+  // accounts and stay NULL until the first registered user claims them.
+  if (!columns.includes('user_id')) {
+    db.exec("ALTER TABLE books ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
   }
 } catch { /* fresh database, no migrations needed */ }
 

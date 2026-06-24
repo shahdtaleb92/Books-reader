@@ -4,6 +4,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import booksRouter from './routes/books.js';
+import authRouter from './routes/auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.FLY_APP_NAME ? '/data/uploads' : join(__dirname, '..', 'uploads');
@@ -21,6 +22,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // API routes
+app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
 
 // Serve static frontend in production

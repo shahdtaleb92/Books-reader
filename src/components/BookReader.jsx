@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchBook, fetchPageTexts, savePageText, getBookPdfUrl, saveReadingPosition } from '../utils/api.js';
+import { fetchBook, fetchPageTexts, savePageText, fetchPdfBlob, saveReadingPosition } from '../utils/api.js';
 import { pdfToImages } from '../utils/pdfToImages.js';
 import { useGeminiOCR } from '../hooks/useGeminiOCR.js';
 import { usePageTTS } from '../hooks/usePageTTS.js';
@@ -24,6 +24,8 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
   const readingRef = useRef(null);
   const hasRestoredRef = useRef(false);
   const touchStartRef = useRef(null);
+  const pdfImagesRef = useRef(null);
+  const pdfImagesPromiseRef = useRef(null);
 
   // Persist reading font size
   useEffect(() => {
@@ -97,16 +99,10 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
         // load can't clobber the stored last_page with 0.
         hasRestoredRef.current = true;
 
-        if (bookData.source_type === 'pdf') {
-          try {
-            const pdfUrl = getBookPdfUrl(bookId);
-            const res = await fetch(pdfUrl);
-            const blob = await res.blob();
-            const file = new File([blob], bookData.filename, { type: 'application/pdf' });
-            const images = await pdfToImages(file);
-            if (!cancelled) setPages(images);
-          } catch { /* PDF images not available offline - text still works */ }
-        }
+        // NOTE: PDF page images are NOT loaded here. The reading view renders
+        // the saved text, not images, so converting the whole PDF on every
+        // open was pure wasted work (slow/hanging on mobile). Images are now
+        // loaded lazily via ensurePdfImages() only when a page needs re-OCR.
       } catch (e) {
         if (!cancelled) setError(e.message);
       } finally {
@@ -165,18 +161,46 @@ export default function BookReader({ bookId, apiKey, ttsApiKey, onBack }) {
     }
   }, [showTTS, editMode]);
 
+  // Lazily download + render the PDF to page images. Only needed for re-OCR of
+  // a page that has no saved text — deduplicated so it runs at most once.
+  const ensurePdfImages = useCallback(async () => {
+    if (pdfImagesRef.current) return pdfImagesRef.current;
+    if (book?.source_type !== 'pdf') return null;
+    if (pdfImagesPromiseRef.current) return pdfImagesPromiseRef.current;
+    pdfImagesPromiseRef.current = (async () => {
+      try {
+        const blob = await fetchPdfBlob(bookId);
+        const file = new File([blob], book.filename || 'book.pdf', { type: 'application/pdf' });
+        const images = await pdfToImages(file);
+        pdfImagesRef.current = images;
+        setPages(images);
+        return images;
+      } catch {
+        return null;
+      } finally {
+        pdfImagesPromiseRef.current = null;
+      }
+    })();
+    return pdfImagesPromiseRef.current;
+  }, [book, bookId]);
+
   const handlePageChange = useCallback(
     async (pageIndex) => {
       if (pageIndex < 0 || pageIndex >= totalPages) return;
       pageTTS.stop();
       setCurrentPage(pageIndex);
-      if (texts[pageIndex] === undefined && pages[pageIndex] && apiKey) {
-        const text = await extractText(pages[pageIndex]);
-        setTexts((prev) => ({ ...prev, [pageIndex]: text }));
-        savePageText(bookId, pageIndex, text).catch(console.error);
+      // Only OCR if this page has no saved text yet. For PDFs we lazily load the
+      // page images on demand rather than converting the whole file on open.
+      if (texts[pageIndex] === undefined && apiKey && book?.source_type === 'pdf') {
+        const images = pdfImagesRef.current || await ensurePdfImages();
+        if (images && images[pageIndex]) {
+          const text = await extractText(images[pageIndex]);
+          setTexts((prev) => ({ ...prev, [pageIndex]: text }));
+          savePageText(bookId, pageIndex, text).catch(console.error);
+        }
       }
     },
-    [pages, texts, extractText, pageTTS, bookId, apiKey, totalPages]
+    [texts, extractText, pageTTS, bookId, apiKey, totalPages, book, ensurePdfImages]
   );
 
   // Swipe to turn pages (mobile). In this RTL reader the on-screen "next"
