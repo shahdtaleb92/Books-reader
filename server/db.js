@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
+console.log('[db] initializing...');
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.FLY_APP_NAME ? '/data' : join(__dirname, '..', 'data');
 
@@ -110,13 +112,15 @@ try {
   if (!columns.includes('user_id')) {
     db.exec("ALTER TABLE books ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
   }
-} catch { /* fresh database, no migrations needed */ }
+} catch (e) { console.log('[db] books migration skipped:', e?.message || 'fresh'); }
 
 try {
   const audioCols = db.prepare("PRAGMA table_info(audio)").all().map(c => c.name);
   if (!audioCols.includes('chunk_timings')) {
     db.exec("ALTER TABLE audio ADD COLUMN chunk_timings TEXT DEFAULT ''");
   }
-} catch { /* fresh database */ }
+} catch (e) { console.log('[db] audio migration skipped:', e?.message || 'fresh'); }
+
+console.log('[db] ready');
 
 export default db;

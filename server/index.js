@@ -3,14 +3,23 @@ import cors from 'cors';
 import { existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import booksRouter from './routes/books.js';
-import authRouter from './routes/auth.js';
+
+console.log('[boot] starting server...');
+
+let booksRouter, authRouter;
+try {
+  ({ default: authRouter } = await import('./routes/auth.js'));
+  ({ default: booksRouter } = await import('./routes/books.js'));
+  console.log('[boot] routes loaded');
+} catch (e) {
+  console.error('[boot] FATAL: failed to load routes:', e);
+  process.exit(1);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = process.env.FLY_APP_NAME ? '/data/uploads' : join(__dirname, '..', 'uploads');
 const DIST_DIR = join(__dirname, '..', 'dist');
 
-// Ensure uploads directory exists
 if (!existsSync(UPLOADS_DIR)) {
   mkdirSync(UPLOADS_DIR, { recursive: true });
 }
@@ -34,6 +43,5 @@ if (existsSync(DIST_DIR)) {
 }
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-  console.log(`Local: http://localhost:${PORT}`);
+  console.log(`[boot] listening on http://0.0.0.0:${PORT}`);
 });
