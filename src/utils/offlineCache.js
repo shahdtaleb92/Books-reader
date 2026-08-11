@@ -126,6 +126,12 @@ export async function clearAllCachedAudio() {
 
 export async function clearAllData() {
   localStorage.clear();
+  await clearOfflineCacheOnly();
+}
+
+// Wipe the offline IndexedDB cache (audio + texts) WITHOUT touching
+// localStorage — keeps the user logged in and preserves their API key.
+export async function clearOfflineCacheOnly() {
   await new Promise((resolve) => {
     const req = indexedDB.deleteDatabase(DB_NAME);
     req.onsuccess = resolve;

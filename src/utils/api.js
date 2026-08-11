@@ -1,7 +1,38 @@
-const BASE = '/api/books';
+import { apiFetch } from './auth.js';
 
+const BASE = '/api/books';
+const AUTH = '/api/auth';
+
+// ---- Authentication ----
+export async function registerUser(username, passcode) {
+  const res = await fetch(`${AUTH}/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, passcode }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'فشل إنشاء الحساب');
+  return data; // { token, username }
+}
+
+export async function loginUser(username, passcode) {
+  const res = await fetch(`${AUTH}/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, passcode }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'فشل تسجيل الدخول');
+  return data; // { token, username }
+}
+
+export async function logoutUser() {
+  await apiFetch(`${AUTH}/logout`, { method: 'POST' }).catch(() => {});
+}
+
+// ---- Books ----
 export async function fetchBooks() {
-  const res = await fetch(BASE);
+  const res = await apiFetch(BASE);
   if (!res.ok) throw new Error('Failed to fetch books');
   return res.json();
 }
@@ -12,13 +43,13 @@ export async function uploadBook(file, totalPages) {
   form.append('title', file.name.replace(/\.[^.]+$/, ''));
   if (totalPages) form.append('totalPages', totalPages);
 
-  const res = await fetch(BASE, { method: 'POST', body: form });
+  const res = await apiFetch(BASE, { method: 'POST', body: form });
   if (!res.ok) throw new Error('Failed to upload book');
   return res.json();
 }
 
 export async function createTextBook(title, text) {
-  const res = await fetch(`${BASE}/text`, {
+  const res = await apiFetch(`${BASE}/text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, text }),
@@ -28,7 +59,7 @@ export async function createTextBook(title, text) {
 }
 
 export async function createBookFromUrl(url) {
-  const res = await fetch(`${BASE}/url`, {
+  const res = await apiFetch(`${BASE}/url`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
@@ -39,25 +70,32 @@ export async function createBookFromUrl(url) {
 }
 
 export async function fetchBook(id) {
-  const res = await fetch(`${BASE}/${id}`);
+  const res = await apiFetch(`${BASE}/${id}`);
   if (!res.ok) throw new Error('Failed to fetch book');
   return res.json();
 }
 
 export async function deleteBook(id) {
-  const res = await fetch(`${BASE}/${id}`, { method: 'DELETE' });
+  const res = await apiFetch(`${BASE}/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete book');
   return res.json();
 }
 
+// Delete all of the logged-in user's books (server-side)
+export async function deleteAllMyBooks() {
+  const res = await apiFetch(BASE, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete books');
+  return res.json();
+}
+
 export async function fetchPageTexts(bookId) {
-  const res = await fetch(`${BASE}/${bookId}/pages`);
+  const res = await apiFetch(`${BASE}/${bookId}/pages`);
   if (!res.ok) throw new Error('Failed to fetch pages');
   return res.json();
 }
 
 export async function saveExtractedTexts(bookId, texts, totalPages) {
-  const res = await fetch(`${BASE}/${bookId}/extract`, {
+  const res = await apiFetch(`${BASE}/${bookId}/extract`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ texts, totalPages }),
@@ -67,7 +105,7 @@ export async function saveExtractedTexts(bookId, texts, totalPages) {
 }
 
 export async function savePageText(bookId, pageNum, text) {
-  const res = await fetch(`${BASE}/${bookId}/pages/${pageNum}`, {
+  const res = await apiFetch(`${BASE}/${bookId}/pages/${pageNum}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -77,7 +115,7 @@ export async function savePageText(bookId, pageNum, text) {
 }
 
 export async function saveReadingPosition(bookId, page) {
-  const res = await fetch(`${BASE}/${bookId}/position`, {
+  const res = await apiFetch(`${BASE}/${bookId}/position`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ page }),
@@ -86,13 +124,17 @@ export async function saveReadingPosition(bookId, page) {
   return res.json();
 }
 
-export function getBookPdfUrl(bookId) {
-  return `${BASE}/${bookId}/pdf`;
+// Fetch the raw PDF as a blob (authenticated). Used lazily, only when a page
+// needs re-OCR — the reading view itself renders saved text, not images.
+export async function fetchPdfBlob(bookId) {
+  const res = await apiFetch(`${BASE}/${bookId}/pdf`);
+  if (!res.ok) throw new Error('Failed to fetch PDF');
+  return res.blob();
 }
 
 // Audio persistence
 export async function fetchPageAudio(bookId, pageNum, voice) {
-  const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`);
+  const res = await apiFetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('Failed to fetch audio');
 
@@ -112,7 +154,7 @@ export async function savePageAudio(bookId, pageNum, voice, blob, chunkTimings) 
   if (chunkTimings) {
     headers['X-Chunk-Timings'] = JSON.stringify(chunkTimings);
   }
-  const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`, {
+  const res = await apiFetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`, {
     method: 'POST',
     headers,
     body: blob,
@@ -122,13 +164,13 @@ export async function savePageAudio(bookId, pageNum, voice, blob, chunkTimings) 
 }
 
 export async function fetchSavedAudioPages(bookId, voice) {
-  const res = await fetch(`${BASE}/${bookId}/audio?voice=${encodeURIComponent(voice)}`);
+  const res = await apiFetch(`${BASE}/${bookId}/audio?voice=${encodeURIComponent(voice)}`);
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function deletePageAudio(bookId, pageNum, voice) {
-  const res = await fetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`, {
+  const res = await apiFetch(`${BASE}/${bookId}/audio/${pageNum}?voice=${encodeURIComponent(voice)}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete audio');
@@ -136,7 +178,7 @@ export async function deletePageAudio(bookId, pageNum, voice) {
 }
 
 export async function cleanupOldAudio() {
-  const res = await fetch(`${BASE}/audio/cleanup`, { method: 'DELETE' });
+  const res = await apiFetch(`${BASE}/audio/cleanup`, { method: 'DELETE' });
   if (!res.ok) return { deleted: 0 };
   return res.json();
 }
